@@ -63,7 +63,7 @@ export interface PlacedOrder {
   address: OrderAddressSnapshot;
   subtotalPaiseStr: string;
   deliveryFeePaiseStr: string;
-  packagingFeePaiseStr: string;
+  handlingFeePaiseStr: string;
   taxPaiseStr: string;
   totalPaiseStr: string;
   paymentMethod: 'UPI' | 'CARD' | 'COD';

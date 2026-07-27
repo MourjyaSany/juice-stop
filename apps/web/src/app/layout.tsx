@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { BottomNav } from '@/components/bottom-nav';
+import { MotionProvider } from '@/components/motion-provider';
 import './globals.css';
 
 /**
@@ -57,8 +58,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-IN" suppressHydrationWarning>
       <body className={`${display.variable} ${sans.variable} ${mono.variable}`}>
-        {children}
-        <BottomNav />
+        <MotionProvider>
+          {children}
+          <BottomNav />
+        </MotionProvider>
       </body>
     </html>
   );

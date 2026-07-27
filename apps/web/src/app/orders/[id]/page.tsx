@@ -14,6 +14,7 @@ import {
   type PlacedOrder,
 } from '@/store/orders';
 import { CheckIcon, ChevronLeftIcon, ClockIcon, MapPinIcon, PhoneIcon } from '@/components/icons';
+import { BillSummary } from '@/components/bill-summary';
 import { Card, EmptyState, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
 
 export default function OrderTrackingPage() {
@@ -177,26 +178,23 @@ export default function OrderTrackingPage() {
               ))}
             </ul>
 
-            <dl
-              className="mt-3 space-y-2 border-t pt-3 text-sm"
+            <div
+              className="mt-3.5 border-t pt-3.5"
               style={{ borderColor: 'var(--color-border-subtle)' }}
             >
-              <Row label="Item total" value={Money.format(toPaise(order.subtotalPaiseStr))} />
-              <Row label="Delivery" value="FREE" valueClass="text-[var(--color-success)] font-semibold" />
-              <Row label="Packaging" value={Money.format(toPaise(order.packagingFeePaiseStr))} />
-              <Row label="GST (5%)" value={Money.format(toPaise(order.taxPaiseStr))} />
-              <div
-                className="!mt-3 flex items-baseline justify-between border-t pt-3"
-                style={{ borderColor: 'var(--color-border-subtle)' }}
-              >
-                <dt className="font-display text-sm font-semibold">
-                  Paid · {order.paymentMethod}
-                </dt>
-                <dd className="tabular font-display text-lg font-bold">
-                  {Money.format(toPaise(order.totalPaiseStr))}
-                </dd>
-              </div>
-            </dl>
+              {/* A settled receipt does not animate — a historical total has no reason to count up. */}
+              <BillSummary
+                subtotalPaise={toPaise(order.subtotalPaiseStr)}
+                deliveryFeePaise={toPaise(order.deliveryFeePaiseStr)}
+                handlingFeePaise={toPaise(order.handlingFeePaiseStr)}
+                taxPaise={toPaise(order.taxPaiseStr)}
+                totalPaise={toPaise(order.totalPaiseStr)}
+                animate={false}
+              />
+              <p className="mt-2.5 text-right text-xs text-[var(--color-text-tertiary)]">
+                Paid by {order.paymentMethod}
+              </p>
+            </div>
           </Card>
         </section>
       </div>

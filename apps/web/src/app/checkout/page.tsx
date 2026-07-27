@@ -9,6 +9,7 @@ import { useOrders } from '@/store/orders';
 import { checkProfileReadiness, useProfile } from '@/store/profile';
 import { findBuilding } from '@/data/buildings';
 import { CheckIcon, ChevronLeftIcon, MapPinIcon, UserIcon } from '@/components/icons';
+import { BillSummary } from '@/components/bill-summary';
 import { Button, Card, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
 
 type PaymentMethod = 'UPI' | 'CARD' | 'COD';
@@ -90,7 +91,7 @@ export default function CheckoutPage() {
       },
       subtotalPaiseStr: totals.subtotalPaise.toString(),
       deliveryFeePaiseStr: totals.deliveryFeePaise.toString(),
-      packagingFeePaiseStr: totals.packagingFeePaise.toString(),
+      handlingFeePaiseStr: totals.handlingFeePaise.toString(),
       taxPaiseStr: totals.taxPaise.toString(),
       totalPaiseStr: totals.totalPaise.toString(),
     });
@@ -238,24 +239,18 @@ export default function CheckoutPage() {
               ))}
             </ul>
 
-            <dl
-              className="mt-3 space-y-2 border-t pt-3 text-sm"
+            <div
+              className="mt-3.5 border-t pt-3.5"
               style={{ borderColor: 'var(--color-border-subtle)' }}
             >
-              <Row label="Item total" value={Money.format(totals.subtotalPaise)} />
-              <Row label="Delivery" value="FREE" valueClass="text-[var(--color-success)] font-semibold" />
-              <Row label="Packaging" value={Money.format(totals.packagingFeePaise)} />
-              <Row label="GST (5%)" value={Money.format(totals.taxPaise)} />
-              <div
-                className="!mt-3 flex items-baseline justify-between border-t pt-3"
-                style={{ borderColor: 'var(--color-border-subtle)' }}
-              >
-                <dt className="font-display text-sm font-semibold">To pay</dt>
-                <dd className="tabular text-gradient font-display text-xl font-bold">
-                  {Money.format(totals.totalPaise)}
-                </dd>
-              </div>
-            </dl>
+              <BillSummary
+                subtotalPaise={totals.subtotalPaise}
+                deliveryFeePaise={totals.deliveryFeePaise}
+                handlingFeePaise={totals.handlingFeePaise}
+                taxPaise={totals.taxPaise}
+                totalPaise={totals.totalPaise}
+              />
+            </div>
           </Card>
         </section>
 

@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { getStoreStatus, Money, MIN_ORDER_PAISE } from '@juice-stop/core';
 import { priceCart, useCart } from '@/store/cart';
-import { BagIcon, ChevronLeftIcon, MinusIcon, PlusIcon, TrashIcon } from '@/components/icons';
+import { BagIcon, ChevronLeftIcon, TrashIcon } from '@/components/icons';
+import { BillSummary } from '@/components/bill-summary';
+import { QuantityStepper } from '@/components/quantity-stepper';
+import { AnimatedPaise } from '@/components/animated-value';
 import { Card, EmptyState, Skeleton, useHydrated } from '@/components/ui';
 
 export default function CartPage() {
@@ -100,37 +103,16 @@ export default function CartPage() {
                     </div>
 
                     <div className="mt-3 flex items-center justify-between">
-                      <div
-                        className="flex h-9 items-center gap-1 rounded-[10px] px-1"
-                        style={{
-                          background: 'var(--color-inset)',
-                          border: '1px solid var(--color-border-subtle)',
-                        }}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setQuantity(p.line.lineId, p.line.quantity - 1)}
-                          aria-label="Decrease quantity"
-                          className="pressable flex h-7 w-7 items-center justify-center rounded-[8px]"
-                        >
-                          <MinusIcon size={14} strokeWidth={2.4} />
-                        </button>
-                        <span className="tabular w-6 text-center text-sm font-semibold">
-                          {p.line.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setQuantity(p.line.lineId, p.line.quantity + 1)}
-                          aria-label="Increase quantity"
-                          className="pressable flex h-7 w-7 items-center justify-center rounded-[8px]"
-                        >
-                          <PlusIcon size={14} strokeWidth={2.4} />
-                        </button>
-                      </div>
-
-                      <span className="tabular font-display text-base font-semibold">
-                        {Money.format(p.totalPaise)}
-                      </span>
+                      <QuantityStepper
+                        quantity={p.line.quantity}
+                        onIncrement={() => setQuantity(p.line.lineId, p.line.quantity + 1)}
+                        onDecrement={() => setQuantity(p.line.lineId, p.line.quantity - 1)}
+                        size="sm"
+                      />
+                      <AnimatedPaise
+                        value={p.totalPaise}
+                        className="font-display text-base font-bold"
+                      />
                     </div>
                   </Card>
                 </li>
@@ -139,28 +121,16 @@ export default function CartPage() {
 
             {/* Bill. Every line the customer will be charged, before they commit to anything. */}
             <Card className="mt-5 p-4">
-              <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
+              <h2 className="mb-3.5 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
                 Bill
               </h2>
-              <dl className="mt-3 space-y-2 text-sm">
-                <Row label="Item total" value={Money.format(totals.subtotalPaise)} />
-                <Row
-                  label="Delivery"
-                  value="FREE"
-                  valueClass="text-[var(--color-success)] font-semibold"
-                />
-                <Row label="Packaging" value={Money.format(totals.packagingFeePaise)} />
-                <Row label="GST (5%)" value={Money.format(totals.taxPaise)} />
-                <div
-                  className="!mt-3 flex items-baseline justify-between border-t pt-3"
-                  style={{ borderColor: 'var(--color-border-subtle)' }}
-                >
-                  <dt className="font-display text-sm font-semibold">To pay</dt>
-                  <dd className="tabular text-gradient font-display text-xl font-bold">
-                    {Money.format(totals.totalPaise)}
-                  </dd>
-                </div>
-              </dl>
+              <BillSummary
+                subtotalPaise={totals.subtotalPaise}
+                deliveryFeePaise={totals.deliveryFeePaise}
+                handlingFeePaise={totals.handlingFeePaise}
+                taxPaise={totals.taxPaise}
+                totalPaise={totals.totalPaise}
+              />
             </Card>
 
             {/* Blockers, stated before the button rather than on tapping it. */}
@@ -209,19 +179,3 @@ export default function CartPage() {
   );
 }
 
-function Row({
-  label,
-  value,
-  valueClass = '',
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between">
-      <dt className="text-[var(--color-text-secondary)]">{label}</dt>
-      <dd className={`tabular ${valueClass}`}>{value}</dd>
-    </div>
-  );
-}

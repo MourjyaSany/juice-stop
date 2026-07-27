@@ -23,7 +23,8 @@ export function ItemSheet({
   item: MenuItem | null;
   open: boolean;
   onClose: () => void;
-  onAdded: (name: string) => void;
+  /** Optional — the floating cart already confirms the add, so most callers don't need this. */
+  onAdded?: ((name: string) => void) | undefined;
 }) {
   const add = useCart((s) => s.add);
   const [variantId, setVariantId] = useState('');
@@ -69,7 +70,7 @@ export function ItemSheet({
 
   const submit = () => {
     add({ itemId: item.id, variantId: variant.id, addOnIds, quantity, note: note.trim() });
-    onAdded(item.name);
+    onAdded?.(item.name);
     onClose();
   };
 

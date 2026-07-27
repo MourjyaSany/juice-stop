@@ -330,10 +330,18 @@ mobile browser chrome doesn't clip sticky checkout buttons.
 | LCP (mobile, 4G) | < 2.0 s |
 | INP | < 200 ms |
 | CLS | < 0.05 |
-| First-load JS (customer route) | < 130 KB gzip |
+| First-load JS — static routes (`/`, `/profile`, `/orders`) | < 120 KB gzip |
+| First-load JS — interactive routes (`/menu`, `/cart`, `/checkout`, tracking) | < 160 KB gzip |
 | Menu payload | < 60 KB gzip |
 | Lighthouse Performance / A11y | ≥ 90 / ≥ 95 |
 | Kitchen app cold boot (offline) | < 1.5 s |
 
 Budgets fail the build. A design system that ships beautiful screens nobody can load on hostel Wi-Fi
 has failed at its actual job.
+
+**Why two JS budgets.** Motion's core runtime costs ~30 KB gzip and cannot be lazy-loaded — only
+its *feature* bundle can (`LazyMotion` with an async loader, which we use). Rather than pay that
+everywhere, the animation-heavy routes carry it and the static ones do not: `/` is 106 KB while
+`/menu` is 155 KB. The split is the point. If the interactive budget is ever the binding
+constraint, the stepper and counters can be rewritten against the Web Animations API for roughly
+a quarter of the size and noticeably more work per component.

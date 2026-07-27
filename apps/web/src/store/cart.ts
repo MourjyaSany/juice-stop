@@ -100,7 +100,7 @@ export interface CartTotals {
   itemCount: number;
   subtotalPaise: Paise;
   deliveryFeePaise: Paise;
-  packagingFeePaise: Paise;
+  handlingFeePaise: Paise;
   taxPaise: Paise;
   totalPaise: Paise;
   meetsMinimum: boolean;
@@ -144,11 +144,13 @@ export function priceCart(lines: CartLine[], terms = COMMERCIAL_TERMS): CartTota
   const subtotalPaise = Money.sum(priced.map((p) => p.totalPaise));
   const itemCount = priced.reduce((n, p) => n + p.line.quantity, 0);
 
-  // Free delivery on every order; packaging only applies to a non-empty cart.
+  // Delivery, handling and GST are all currently absorbed, so the grand total equals the
+  // subtotal. The arithmetic is kept intact rather than short-circuited: the day any of these
+  // becomes chargeable it is a one-line config change, not a rewrite of the pricing path.
   const deliveryFeePaise = terms.deliveryFeePaise;
-  const packagingFeePaise = priced.length > 0 ? terms.packagingFeePaise : Money.ZERO;
+  const handlingFeePaise = terms.handlingFeePaise;
 
-  const taxableBase = Money.add(subtotalPaise, Money.add(deliveryFeePaise, packagingFeePaise));
+  const taxableBase = Money.add(subtotalPaise, Money.add(deliveryFeePaise, handlingFeePaise));
   const taxPaise = Money.percentOf(taxableBase, terms.gstRateBps);
   const totalPaise = Money.add(taxableBase, taxPaise);
 
@@ -159,7 +161,7 @@ export function priceCart(lines: CartLine[], terms = COMMERCIAL_TERMS): CartTota
     itemCount,
     subtotalPaise,
     deliveryFeePaise,
-    packagingFeePaise,
+    handlingFeePaise,
     taxPaise,
     totalPaise,
     meetsMinimum: subtotalPaise >= terms.minOrderPaise,
