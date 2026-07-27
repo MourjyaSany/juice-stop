@@ -1,50 +1,116 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Money } from '@juice-stop/core';
-import { CATEGORIES, PRODUCTS, TAG_LABELS, type MenuProduct } from '@/data/menu';
-import { CheckIcon, ClockIcon, DietMark, PlusIcon, SearchIcon, StarIcon } from './icons';
-import { EmptyState } from './ui';
+import {
+  CATEGORIES,
+  GROUPS,
+  ITEMS,
+  TAG_LABELS,
+  hasChoices,
+  priceFrom,
+  type GroupId,
+  type MenuItem,
+} from '@/data/menu';
+import { priceCart, useCart } from '@/store/cart';
+import { ItemSheet } from './item-sheet';
+import { BagIcon, CheckIcon, DietMark, PlusIcon, SearchIcon } from './icons';
+import { EmptyState, useHydrated } from './ui';
 
 /**
  * The menu browser.
  *
- * Two deliberate decisions:
+ * ~250 items presented as **two levels of navigation** rather than one endless list: group tabs
+ * (Food · Snacks · Drinks · Combos) narrow to a handful of categories, which render as labelled
+ * sections. A single flat list of 250 rows is unusable on a phone at 1 AM.
  *
- * 1. **The catalogue is imported here, not passed as a prop.** `bigint` cannot cross the RSC
- *    serialisation boundary, and money is `bigint` paise (ADR-003). Importing the static module
- *    directly sidesteps that entirely — no conversion to `number` and back, which is exactly the
- *    round-trip that reintroduces float error into prices.
- *
- * 2. **Filtering and search are entirely client-side.** The whole menu is well under 60 KB, so
- *    changing category or typing a query costs zero network round trips and shows no spinner.
- *    That is the difference between feeling native and feeling like a website
- *    (01-system-architecture.md §12).
+ * Filtering and search are entirely client-side — the whole menu is already in memory, so
+ * changing category or typing costs zero network round trips and shows no spinner.
  */
 export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
+  const hydrated = useHydrated();
+  const lines = useCart((s) => s.lines);
+  const totals = useMemo(() => priceCart(lines), [lines]);
+
+  const [groupId, setGroupId] = useState<GroupId>('food');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [vegOnly, setVegOnly] = useState(false);
+  const [sheetItem, setSheetItem] = useState<MenuItem | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searching = query.trim().length > 0;
+
+  const notify = (name: string) => {
+    setToast(`${name} added`);
+    if (toastTimer.current !== null) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  };
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current !== null) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
+
+  const categories = useMemo(
+    () => CATEGORIES.filter((c) => c.groupId === groupId),
+    [groupId],
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return PRODUCTS.filter((p) => {
-      if (categoryId !== null && p.categoryId !== categoryId) return false;
-      if (vegOnly && !p.isVeg) return false;
-      if (q.length > 0 && !`${p.name} ${p.tagline}`.toLowerCase().includes(q)) return false;
+    return ITEMS.filter((item) => {
+      if (vegOnly && !item.isVeg) return false;
+
+      // Search deliberately ignores the group/category filters — someone typing "paneer" wants
+      // every paneer dish, not the paneer dishes that happen to be in the tab they left open.
+      if (q.length > 0) {
+        return `${item.name} ${item.description ?? ''}`.toLowerCase().includes(q);
+      }
+
+      if (item.groupId !== groupId) return false;
+      if (categoryId !== null && item.categoryId !== categoryId) return false;
       return true;
     });
-  }, [categoryId, query, vegOnly]);
+  }, [groupId, categoryId, query, vegOnly]);
 
-  const clearAll = () => {
-    setQuery('');
-    setCategoryId(null);
-    setVegOnly(false);
+  /** Group the visible items under their category so sections stay labelled. */
+  const sections = useMemo(() => {
+    const byCategory = new Map<string, MenuItem[]>();
+    for (const item of visible) {
+      const list = byCategory.get(item.categoryId) ?? [];
+      list.push(item);
+      byCategory.set(item.categoryId, list);
+    }
+    return CATEGORIES.filter((c) => byCategory.has(c.id)).map((c) => ({
+      category: c,
+      items: byCategory.get(c.id)!,
+    }));
+  }, [visible]);
+
+  const openOrAdd = (item: MenuItem) => {
+    // Items with a single price and no add-ons skip the sheet entirely — one tap, done.
+    if (!hasChoices(item)) {
+      useCart.getState().add({
+        itemId: item.id,
+        variantId: item.variants[0]!.id,
+        addOnIds: [],
+        quantity: 1,
+        note: '',
+      });
+      notify(item.name);
+      return;
+    }
+    setSheetItem(item);
   };
 
   return (
     <div>
-      {/* Search — no network request, so results appear as fast as the user types. */}
+      {/* Search */}
       <div className="relative">
         <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]">
           <SearchIcon size={17} />
@@ -53,23 +119,60 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search the whole menu…"
+          placeholder="Search 250+ items…"
           aria-label="Search the menu"
-          className="h-12 w-full rounded-[14px] border bg-[var(--color-inset)] pl-11 pr-4 text-base text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none"
+          className="h-12 w-full rounded-[14px] border bg-[var(--color-inset)] pl-11 pr-4 text-base placeholder:text-[var(--color-text-tertiary)] focus:outline-none"
         />
       </div>
 
-      {/* Category pills */}
-      <div className="no-scrollbar -mx-5 mt-4 flex gap-2 overflow-x-auto px-5">
-        <Pill active={categoryId === null} onClick={() => setCategoryId(null)}>
-          All
-        </Pill>
-        {CATEGORIES.map((c) => (
-          <Pill key={c.id} active={categoryId === c.id} onClick={() => setCategoryId(c.id)}>
-            {c.name}
-          </Pill>
-        ))}
-      </div>
+      {/* Group tabs — hidden while searching, since search spans every group. */}
+      {!searching && (
+        <div className="mt-4 grid grid-cols-4 gap-2">
+          {GROUPS.map((g) => {
+            const active = g.id === groupId;
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => {
+                  setGroupId(g.id);
+                  setCategoryId(null);
+                }}
+                aria-pressed={active}
+                className="pressable flex flex-col items-center gap-1 rounded-[14px] py-2.5"
+                style={
+                  active
+                    ? { background: 'var(--gradient-brand)', color: '#fff', boxShadow: 'var(--glow-orange)' }
+                    : {
+                        background: 'var(--color-raised)',
+                        color: 'var(--color-text-secondary)',
+                        border: '1px solid var(--color-border-subtle)',
+                      }
+                }
+              >
+                <span className="text-base leading-none" aria-hidden>
+                  {g.emoji}
+                </span>
+                <span className="text-[0.6875rem] font-semibold">{g.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Category chips within the group */}
+      {!searching && categories.length > 1 && (
+        <div className="no-scrollbar -mx-5 mt-3 flex gap-2 overflow-x-auto px-5">
+          <Chip active={categoryId === null} onClick={() => setCategoryId(null)}>
+            All
+          </Chip>
+          {categories.map((c) => (
+            <Chip key={c.id} active={categoryId === c.id} onClick={() => setCategoryId(c.id)}>
+              {c.name}
+            </Chip>
+          ))}
+        </div>
+      )}
 
       <div className="mt-3.5 flex items-center justify-between">
         <button
@@ -94,28 +197,55 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
           </span>
           Veg only
         </button>
-
         <p className="tabular text-xs text-[var(--color-text-tertiary)]">
           {visible.length} {visible.length === 1 ? 'item' : 'items'}
         </p>
       </div>
 
-      {/* Results */}
-      {visible.length > 0 ? (
-        <div className="mt-4 space-y-3">
-          {visible.map((product) => (
-            <ProductRow key={product.id} product={product} acceptingOrders={acceptingOrders} />
+      {/* Sections */}
+      {sections.length > 0 ? (
+        <div className="mt-5 space-y-7">
+          {sections.map(({ category, items }) => (
+            <section key={category.id}>
+              <div className="mb-3 flex items-baseline gap-2">
+                <span aria-hidden>{category.emoji}</span>
+                <h2 className="font-display text-base font-semibold">{category.name}</h2>
+                <span className="tabular text-xs text-[var(--color-text-tertiary)]">
+                  {items.length}
+                </span>
+                {category.note !== undefined && (
+                  <span className="ml-auto text-[10px] text-[var(--color-text-tertiary)]">
+                    {category.note}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2.5">
+                {items.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    acceptingOrders={acceptingOrders}
+                    onAdd={() => openOrAdd(item)}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       ) : (
         <EmptyState
           icon={<SearchIcon size={26} />}
           title="Nothing matches that"
-          body="Try a different search, or browse the whole menu."
+          body="Try a different search, or browse a different section."
           action={
             <button
               type="button"
-              onClick={clearAll}
+              onClick={() => {
+                setQuery('');
+                setCategoryId(null);
+                setVegOnly(false);
+              }}
               className="pressable rounded-[12px] border px-5 py-2.5 text-sm font-semibold"
               style={{ background: 'var(--color-raised)' }}
             >
@@ -124,11 +254,61 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
           }
         />
       )}
+
+      <ItemSheet
+        item={sheetItem}
+        open={sheetItem !== null}
+        onClose={() => setSheetItem(null)}
+        onAdded={notify}
+      />
+
+      {/* Toast */}
+      {toast !== null && (
+        <div
+          role="status"
+          className="glass-strong fixed inset-x-0 bottom-[6.5rem] z-40 mx-auto flex w-fit items-center gap-2 rounded-full px-4 py-2.5"
+          style={{ animation: 'rise 0.28s cubic-bezier(0.16,1,0.3,1) both' }}
+        >
+          <span style={{ color: 'var(--color-success)' }}>
+            <CheckIcon size={16} strokeWidth={2.6} />
+          </span>
+          <span className="text-sm font-medium">{toast}</span>
+        </div>
+      )}
+
+      {/* Floating cart bar */}
+      {hydrated && totals.itemCount > 0 && (
+        <Link
+          href="/cart"
+          className="glass-strong pressable fixed inset-x-4 bottom-[5.75rem] z-40 mx-auto flex max-w-[28rem] items-center justify-between rounded-[16px] px-4 py-3"
+          style={{ animation: 'rise 0.3s cubic-bezier(0.16,1,0.3,1) both' }}
+        >
+          <span className="flex items-center gap-2.5">
+            <span
+              className="flex h-9 w-9 items-center justify-center rounded-[11px]"
+              style={{ background: 'var(--gradient-brand)', color: '#fff' }}
+            >
+              <BagIcon size={17} />
+            </span>
+            <span>
+              <span className="tabular block text-sm font-semibold">
+                {totals.itemCount} {totals.itemCount === 1 ? 'item' : 'items'}
+              </span>
+              <span className="tabular block text-xs text-[var(--color-text-secondary)]">
+                {Money.format(totals.subtotalPaise)}
+              </span>
+            </span>
+          </span>
+          <span className="font-display text-sm font-semibold text-[var(--color-purple-300)]">
+            View cart →
+          </span>
+        </Link>
+      )}
     </div>
   );
 }
 
-function Pill({
+function Chip({
   active,
   onClick,
   children,
@@ -142,10 +322,10 @@ function Pill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="pressable shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium"
+      className="pressable shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium"
       style={
         active
-          ? { background: 'var(--gradient-brand)', color: '#fff', boxShadow: 'var(--glow-orange)' }
+          ? { background: 'var(--color-purple-500)', color: '#fff' }
           : {
               background: 'var(--color-raised)',
               color: 'var(--color-text-secondary)',
@@ -158,70 +338,44 @@ function Pill({
   );
 }
 
-function ProductRow({
-  product,
+function ItemRow({
+  item,
   acceptingOrders,
+  onAdd,
 }: {
-  product: MenuProduct;
+  item: MenuItem;
   acceptingOrders: boolean;
+  onAdd: () => void;
 }) {
-  const soldOut = !product.inStock;
+  const soldOut = !item.inStock;
   const canAdd = acceptingOrders && !soldOut;
+  const multi = item.variants.length > 1;
 
   return (
     <article
-      className="glass liftable flex gap-3.5 rounded-[20px] p-3.5"
+      className="glass flex items-start gap-3 rounded-[16px] p-3.5"
       style={soldOut ? { opacity: 0.5 } : undefined}
     >
-      <div
-        className="flex h-[4.75rem] w-[4.75rem] shrink-0 items-center justify-center rounded-[14px] text-3xl"
-        style={{
-          background: 'var(--gradient-glow)',
-          filter: soldOut ? 'grayscale(1)' : undefined,
-        }}
-        aria-hidden
-      >
-        {product.emoji}
-      </div>
+      <span className="mt-[3px] shrink-0">
+        <DietMark isVeg={item.isVeg} />
+      </span>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-start gap-2">
-          <span className="mt-[3px]">
-            <DietMark isVeg={product.isVeg} />
-          </span>
-          <h3 className="min-w-0 flex-1 font-display text-sm font-semibold leading-snug">
-            {product.name}
-          </h3>
-        </div>
+        <h3 className="font-display text-sm font-semibold leading-snug">{item.name}</h3>
 
-        <p className="mt-0.5 line-clamp-1 text-xs text-[var(--color-text-secondary)]">
-          {product.tagline}
-        </p>
+        {item.description !== undefined && (
+          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+            {item.description}
+          </p>
+        )}
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[var(--color-text-secondary)]">
-          <span className="flex items-center gap-1">
-            <StarIcon size={12} filled className="text-[var(--color-warning)]" />
-            <span className="tabular">{product.rating}</span>
-            <span className="opacity-60">({product.ratingCount})</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <ClockIcon size={12} />
-            <span className="tabular">{Math.round(product.prepTimeSeconds / 60)} min</span>
-          </span>
-          {product.spiceLevel > 0 && (
-            <span aria-label={`Spice level ${product.spiceLevel} of 3`}>
-              {'🌶️'.repeat(product.spiceLevel)}
-            </span>
-          )}
-        </div>
-
-        {product.tags.length > 0 && (
+        {item.tags.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {product.tags.map((tag) => (
+            {item.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{ background: 'rgb(168 85 247 / 0.15)', color: 'var(--color-purple-300)' }}
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{ background: 'rgb(255 107 26 / 0.15)', color: 'var(--color-orange-500)' }}
               >
                 {TAG_LABELS[tag] ?? tag}
               </span>
@@ -229,38 +383,40 @@ function ProductRow({
           </div>
         )}
 
-        <div className="mt-2.5 flex items-end justify-between gap-3">
-          <div className="flex items-baseline gap-1.5">
-            <span className="tabular font-display text-base font-semibold">
-              {Money.format(Money.paise(product.pricePaise))}
+        <div className="mt-2 flex items-center gap-1.5">
+          {multi && (
+            <span className="text-[10px] uppercase tracking-wide text-[var(--color-text-tertiary)]">
+              from
             </span>
-            {product.compareAtPaise !== null && (
-              <span className="tabular text-xs text-[var(--color-text-tertiary)] line-through">
-                {Money.format(Money.paise(product.compareAtPaise))}
-              </span>
-            )}
-          </div>
-
-          {soldOut ? (
-            <span className="rounded-[10px] border px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
-              Sold out
+          )}
+          <span className="tabular font-display text-sm font-semibold">
+            {Money.format(priceFrom(item))}
+          </span>
+          {multi && (
+            <span className="text-[10px] text-[var(--color-text-tertiary)]">
+              · {item.variants.length} sizes
             </span>
-          ) : (
-            <button
-              type="button"
-              disabled={!canAdd}
-              /* Disabled before 7 PM, but the OrderingBanner above already explains why — a dead
-                 button with no explanation is the thing to avoid, not a disabled one. */
-              title={canAdd ? undefined : 'Ordering opens at 7 PM'}
-              className="pressable flex h-9 items-center gap-1 rounded-[10px] px-3.5 text-sm font-semibold text-white disabled:pointer-events-none disabled:opacity-35"
-              style={{ background: 'var(--gradient-brand)' }}
-            >
-              <PlusIcon size={15} strokeWidth={2.5} />
-              Add
-            </button>
           )}
         </div>
       </div>
+
+      {soldOut ? (
+        <span className="shrink-0 rounded-[10px] border px-2.5 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)]">
+          Sold out
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={!canAdd}
+          title={canAdd ? undefined : 'Ordering opens at 7 PM'}
+          className="pressable flex h-9 shrink-0 items-center gap-1 rounded-[10px] px-3 text-sm font-semibold text-white disabled:pointer-events-none disabled:opacity-35"
+          style={{ background: 'var(--gradient-brand)' }}
+        >
+          <PlusIcon size={15} strokeWidth={2.6} />
+          Add
+        </button>
+      )}
     </article>
   );
 }

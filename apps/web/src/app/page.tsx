@@ -2,17 +2,40 @@ import Link from 'next/link';
 import { getStoreStatus, Money, MIN_ORDER_PAISE } from '@juice-stop/core';
 import { StoreStatusCard } from '@/components/store-status-card';
 import { OrderingBanner } from '@/components/ordering-banner';
-import { ArrowRightIcon, ClockIcon, MapPinIcon, SparkIcon, StarIcon } from '@/components/icons';
-import { PRODUCTS } from '@/data/menu';
+import { ArrowRightIcon, ClockIcon, DietMark, MapPinIcon, SparkIcon } from '@/components/icons';
+import { ITEMS, priceFrom } from '@/data/menu';
 
 // Store status changes minute to minute, so this page is never served stale.
 export const dynamic = 'force-dynamic';
 
-/** Top-rated items, derived from the catalogue rather than hand-listed twice. */
-const TRENDING = [...PRODUCTS]
-  .filter((p) => p.inStock)
-  .sort((a, b) => b.rating * b.ratingCount - a.rating * a.ratingCount)
-  .slice(0, 5);
+/** Flagged items, derived from the catalogue rather than hand-listed a second time. */
+const TRENDING = ITEMS.filter(
+  (i) => i.inStock && (i.tags.includes('BESTSELLER') || i.tags.includes('TRENDING')),
+).slice(0, 8);
+
+/** Stand-in for photography until real images exist. */
+const CATEGORY_EMOJI: Record<string, string> = {
+  'pizza-veg': '🍕',
+  'pizza-nonveg': '🍕',
+  burgers: '🍔',
+  sandwiches: '🥪',
+  wraps: '🌯',
+  wings: '🍗',
+  fried: '🍟',
+  'momos-maggie': '🍜',
+  'rice-noodles': '🍚',
+  chinese: '🥡',
+  pasta: '🍝',
+  sizzlers: '🔥',
+  snacks: '🥟',
+  juices: '🧃',
+  mojito: '🌿',
+  lassi: '🥛',
+  falooda: '🍨',
+  shakes: '🥤',
+  combos: '🎁',
+  'big-combos': '👑',
+};
 
 export default function HomePage() {
   const status = getStoreStatus();
@@ -132,26 +155,33 @@ export default function HomePage() {
                   style={{ background: 'var(--gradient-glow)' }}
                   aria-hidden
                 >
-                  {item.emoji}
+                  {CATEGORY_EMOJI[item.categoryId] ?? '🍽️'}
                 </div>
-                <h3 className="mt-3 truncate font-display text-sm font-semibold">{item.name}</h3>
-                <p className="mt-0.5 line-clamp-1 text-xs text-[var(--color-text-secondary)]">
-                  {item.tagline}
-                </p>
-                <div className="mt-1.5 flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
-                  <StarIcon size={12} filled className="text-[var(--color-warning)]" />
-                  <span className="tabular">{item.rating}</span>
-                  <span className="opacity-60">({item.ratingCount})</span>
-                </div>
-                <div className="mt-2 flex items-baseline gap-1.5">
-                  <span className="tabular font-display text-base font-semibold">
-                    {Money.format(Money.paise(item.pricePaise))}
+
+                <div className="mt-3 flex items-start gap-1.5">
+                  <span className="mt-[3px]">
+                    <DietMark isVeg={item.isVeg} size={12} />
                   </span>
-                  {item.compareAtPaise !== null && (
-                    <span className="tabular text-xs text-[var(--color-text-tertiary)] line-through">
-                      {Money.format(Money.paise(item.compareAtPaise))}
+                  <h3 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">
+                    {item.name}
+                  </h3>
+                </div>
+
+                {item.description !== undefined && (
+                  <p className="mt-0.5 line-clamp-1 text-xs text-[var(--color-text-secondary)]">
+                    {item.description}
+                  </p>
+                )}
+
+                <div className="mt-2 flex items-baseline gap-1">
+                  {item.variants.length > 1 && (
+                    <span className="text-[10px] uppercase tracking-wide text-[var(--color-text-tertiary)]">
+                      from
                     </span>
                   )}
+                  <span className="tabular font-display text-base font-semibold">
+                    {Money.format(priceFrom(item))}
+                  </span>
                 </div>
               </Link>
             ))}

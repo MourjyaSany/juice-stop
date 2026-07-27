@@ -27,10 +27,6 @@
     "db:seed": "pnpm --filter @juice-stop/db seed",
     "db:studio": "pnpm --filter @juice-stop/db studio",
     "db:reset": "pnpm --filter @juice-stop/db reset",
-    "infra:up": "docker compose -f infra/docker/compose.dev.yml up -d",
-    "infra:down": "docker compose -f infra/docker/compose.dev.yml down",
-    "infra:reset": "docker compose -f infra/docker/compose.dev.yml down -v",
-    "infra:logs": "docker compose -f infra/docker/compose.dev.yml logs -f",
     "prepare": "husky"
   },
   "devDependencies": {
