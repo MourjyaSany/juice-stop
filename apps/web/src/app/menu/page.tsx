@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getStoreStatus } from '@juice-stop/core';
+import { getStoreStatus, Money, MIN_ORDER_PAISE } from '@juice-stop/core';
 import { MenuBrowser } from '@/components/menu-browser';
 import { OrderingBanner } from '@/components/ordering-banner';
+import { ChevronLeftIcon, ClockIcon } from '@/components/icons';
 
 export const metadata: Metadata = {
   title: 'Menu — Juice Stop',
@@ -36,25 +37,39 @@ export default function MenuPage() {
         />
       </div>
 
-      <div className="mx-auto w-full max-w-lg px-5 pb-28 pt-6">
+      <div className="pb-nav mx-auto w-full max-w-lg px-5 pt-6">
         <header className="flex items-center justify-between">
           <Link
             href="/"
-            className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]"
+            aria-label="Back to home"
+            className="pressable flex h-10 w-10 items-center justify-center rounded-[12px]"
+            style={{ background: 'var(--color-raised)', color: 'var(--color-text-secondary)' }}
           >
-            <span aria-hidden>←</span> Home
+            <ChevronLeftIcon size={19} />
           </Link>
-          <p className="tabular font-mono text-sm text-[var(--color-text-secondary)]">
-            {status.localTime} IST
+          <p className="tabular flex items-center gap-1.5 font-mono text-sm text-[var(--color-text-secondary)]">
+            <ClockIcon size={14} />
+            {status.localTime}
           </p>
         </header>
 
         <h1 className="mt-6 font-display text-3xl font-bold tracking-[-0.02em]">Menu</h1>
-        <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">
-          {status.acceptingOrders
-            ? `Kitchen's live · ~${status.quotedEtaMinutes} min`
-            : 'Browse anytime · we deliver 7 PM–4 AM'}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span
+            className="rounded-full px-2.5 py-1 font-semibold"
+            style={{ background: 'rgb(34 197 94 / 0.15)', color: 'var(--color-success)' }}
+          >
+            Free delivery
+          </span>
+          <span className="text-[var(--color-text-tertiary)]">
+            Min order {Money.format(MIN_ORDER_PAISE)}
+          </span>
+          {status.acceptingOrders && (
+            <span className="text-[var(--color-text-tertiary)]">
+              · ~{status.quotedEtaMinutes} min
+            </span>
+          )}
+        </div>
 
         {/* Inline, non-blocking. Browsing is never interrupted. */}
         <div className="mt-5">

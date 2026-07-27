@@ -11,4 +11,5 @@ export { MoneyError } from './money.js';
 
 export * from './business-date.js';
 export * from './store-hours.js';
+export * from './pricing-config.js';
 export * from './result.js';

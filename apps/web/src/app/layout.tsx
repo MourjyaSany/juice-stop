@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
+import { BottomNav } from '@/components/bottom-nav';
 import './globals.css';
 
 /**
@@ -55,7 +56,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-IN" suppressHydrationWarning>
-      <body className={`${display.variable} ${sans.variable} ${mono.variable}`}>{children}</body>
+      <body className={`${display.variable} ${sans.variable} ${mono.variable}`}>
+        {children}
+        <BottomNav />
+      </body>
     </html>
   );
 }
