@@ -4,14 +4,14 @@
   "extends": "./base.json",
   "compilerOptions": {
     // CommonJS output so NestJS (which compiles to CJS for decorator/DI support) can consume
-    // these packages directly. Next.js and Vitest both handle CJS without ceremony, so a single
-    // CJS build serves every consumer — cheaper than maintaining a dual ESM/CJS build.
+    // these packages directly. Next.js and Vitest both handle CJS without ceremony, so one CJS
+    // build serves every consumer — cheaper than maintaining a dual ESM/CJS build.
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "isolatedModules": false,
-    "outDir": "dist",
-    "rootDir": "src"
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+    "isolatedModules": false
+  }
+  // NOTE: no outDir / rootDir / tsBuildInfoFile / include / exclude here, deliberately.
+  // Relative paths inside an extended config resolve against THIS file's directory, not the
+  // consumer's — so `rootDir: "src"` declared here would resolve to packages/config/tsconfig/src
+  // and break every package that extends it. Path options belong in the consuming tsconfig.
 }

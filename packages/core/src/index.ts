@@ -10,4 +10,5 @@ export type { Paise } from './money.js';
 export { MoneyError } from './money.js';
 
 export * from './business-date.js';
+export * from './store-hours.js';
 export * from './result.js';

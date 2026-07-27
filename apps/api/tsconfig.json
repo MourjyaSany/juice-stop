@@ -4,6 +4,9 @@
     "outDir": "dist",
     "rootDir": "src",
     "baseUrl": ".",
+    // Kept inside dist so nest-cli's `deleteOutDir` removes it too. Left outside, tsc would
+    // believe everything is current and emit almost nothing into the now-empty directory.
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
     "paths": {
       "@/*": ["src/*"]
     }

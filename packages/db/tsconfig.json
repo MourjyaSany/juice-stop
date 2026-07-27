@@ -2,7 +2,10 @@
   "extends": "@juice-stop/config/tsconfig/library.json",
   "compilerOptions": {
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // prisma.config.ts uses import.meta, so it is type-checked as ESM.
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
   },
   "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts"]
 }

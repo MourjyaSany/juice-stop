@@ -13,11 +13,7 @@
     "declarationMap": false,
     "allowJs": true,
     "incremental": true,
-    "plugins": [{ "name": "next" }],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
-  },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+    "plugins": [{ "name": "next" }]
+  }
+  // baseUrl / paths / include are set by the consuming application — see library.json.
 }
