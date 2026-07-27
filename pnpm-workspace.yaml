@@ -1,0 +1,14 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Postinstall scripts are blocked by default (supply-chain defence): an unreviewed build script is
+# arbitrary code execution at install time. Each entry below is an explicit, reviewed decision.
+allowBuilds:
+  esbuild: true # native binary for the Vitest/tsup bundler
+  "@prisma/client": true # generates the typed client
+  "@prisma/engines": true # downloads query/migration engines
+  prisma: true
+  sharp: true # native image processing for Next.js
+  "@swc/core": true # Nest/Next compiler
+  unrs-resolver: true # ESLint import resolution

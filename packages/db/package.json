@@ -1,0 +1,39 @@
+{
+  "name": "@juice-stop/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Prisma schema, migrations, seeds and the shared database client.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "generated"],
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:status": "prisma migrate status",
+    "reset": "prisma migrate reset --force",
+    "seed": "tsx prisma/seed/index.ts",
+    "studio": "prisma studio",
+    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rimraf generated .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.0"
+  },
+  "devDependencies": {
+    "@juice-stop/config": "workspace:*",
+    "@juice-stop/core": "workspace:*",
+    "dotenv": "^16.4.0",
+    "prisma": "^6.2.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

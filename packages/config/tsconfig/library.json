@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Juice Stop — pure TS library",
+  "extends": "./base.json",
+  "compilerOptions": {
+    // CommonJS output so NestJS (which compiles to CJS for decorator/DI support) can consume
+    // these packages directly. Next.js and Vitest both handle CJS without ceremony, so a single
+    // CJS build serves every consumer — cheaper than maintaining a dual ESM/CJS build.
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "isolatedModules": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

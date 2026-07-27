@@ -1,0 +1,13 @@
+{
+  "extends": "@juice-stop/config/tsconfig/library.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // The generated Prisma client is large and machine-written; type-checking it on every build
+    // costs seconds for no benefit.
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "generated", "prisma"]
+}
