@@ -1,5 +1,7 @@
+import Link from 'next/link';
 import { getStoreStatus, Money } from '@juice-stop/core';
 import { StoreStatusCard } from '@/components/store-status-card';
+import { OrderingBanner } from '@/components/ordering-banner';
 
 // Store status must never be served stale — it changes minute to minute.
 export const dynamic = 'force-dynamic';
@@ -54,7 +56,7 @@ export default function HomePage() {
           <h1 className="font-display text-[clamp(2.5rem,11vw,3.5rem)] font-bold leading-[0.95] tracking-[-0.03em]">
             Late night hits
             <br />
-            <span className="text-gradient">different.</span> 🌙
+            <span className="text-gradient">different.</span> 
           </h1>
           <p className="mt-4 text-base text-[var(--color-text-secondary)]">
             Open till 4&nbsp;AM · Abode Valley &amp; SRM hostels
@@ -68,24 +70,33 @@ export default function HomePage() {
 
         {/* ── Primary CTA ────────────────────────────────────────────────────────────────── */}
         <section className="animate-rise mt-5" style={{ animationDelay: '140ms' }}>
-          <button
-            type="button"
-            disabled={!status.acceptingOrders}
-            className="group relative flex h-14 w-full items-center justify-center gap-2 overflow-hidden rounded-[14px] font-display text-base font-semibold text-white transition-transform duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+          {/* Always a live link. The menu is browsable 24/7 — gating this on `acceptingOrders`
+              rendered a DISABLED button labelled "Browse the menu", which made browsing
+              impossible for the eleven hours a day the kitchen is shut. */}
+          <Link
+            href="/menu"
+            className="group relative flex h-14 w-full items-center justify-center gap-2 overflow-hidden rounded-[14px] font-display text-base font-semibold text-white transition-transform duration-150 active:scale-[0.97]"
             style={{ background: 'var(--gradient-brand)', boxShadow: 'var(--glow-orange)' }}
           >
             <span className="relative z-10">
-              {status.state === 'CLOSED' ? 'Browse the menu' : 'Start ordering'}
+              {status.acceptingOrders ? 'Start ordering' : 'Browse the menu'}
             </span>
             <span className="relative z-10 transition-transform duration-200 group-hover:translate-x-1">
               →
             </span>
-          </button>
+          </Link>
           <p className="mt-3 text-center text-xs text-[var(--color-text-secondary)]">
             Free delivery over {Money.format(Money.paise(29900))} · Min order{' '}
             {Money.format(Money.paise(9900))}
           </p>
         </section>
+
+        {/* ── Why ordering is off, when it is ────────────────────────────────────────────── */}
+        {!status.acceptingOrders && (
+          <section className="animate-rise mt-4" style={{ animationDelay: '180ms' }}>
+            <OrderingBanner status={status} />
+          </section>
+        )}
 
         {/* ── Trending ───────────────────────────────────────────────────────────────────── */}
         <section className="animate-rise mt-12" style={{ animationDelay: '200ms' }}>

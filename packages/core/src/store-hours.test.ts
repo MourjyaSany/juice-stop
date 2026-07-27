@@ -4,6 +4,7 @@ import {
   formatCountdown,
   getStoreStatus,
   isWithinServiceWindow,
+  orderingBlockedMessage,
   quoteEta,
 } from './store-hours.js';
 
@@ -86,6 +87,62 @@ describe('getStoreStatus()', () => {
     const quiet = getStoreStatus(atIst('2026-07-27', 23, 30), { capacityLoad: 0.1 });
     const slammed = getStoreStatus(atIst('2026-07-27', 23, 30), { capacityLoad: 0.95 });
     expect(slammed.quotedEtaMinutes!).toBeGreaterThan(quiet.quotedEtaMinutes!);
+  });
+});
+
+describe('browsing is always open; only ordering is gated', () => {
+  it.each([
+    [10, 0, 'mid-morning'],
+    [16, 30, 'late afternoon'],
+    [18, 59, 'one minute before opening'],
+    [21, 0, 'mid-service'],
+    [2, 30, 'peak late night'],
+    [5, 0, 'after close'],
+  ])('%s:%s IST (%s) — menu browsable', (hour, minute) => {
+    expect(getStoreStatus(atIst('2026-07-27', hour, minute)).canBrowseMenu).toBe(true);
+  });
+
+  it('separates browsing from ordering before opening', () => {
+    const status = getStoreStatus(atIst('2026-07-27', 16, 0));
+    expect(status.canBrowseMenu).toBe(true);
+    expect(status.acceptingOrders).toBe(false);
+    expect(status.orderingBlockedReason).toBe('BEFORE_OPEN');
+  });
+
+  it('distinguishes "just closed" from "opens later" — recency, not clock position', () => {
+    // Both sit in the same closed gap (04:00 → 19:00); only the framing differs.
+    expect(getStoreStatus(atIst('2026-07-28', 4, 15)).orderingBlockedReason).toBe('AFTER_CLOSE');
+    expect(getStoreStatus(atIst('2026-07-28', 5, 30)).orderingBlockedReason).toBe('AFTER_CLOSE');
+    expect(getStoreStatus(atIst('2026-07-28', 6, 30)).orderingBlockedReason).toBe('BEFORE_OPEN');
+    expect(getStoreStatus(atIst('2026-07-27', 16, 0)).orderingBlockedReason).toBe('BEFORE_OPEN');
+  });
+
+  it('reports CAPACITY_PAUSED during service, not a clock reason', () => {
+    const status = getStoreStatus(atIst('2026-07-27', 23, 30), { capacityLoad: 1 });
+    expect(status.canBrowseMenu).toBe(true);
+    expect(status.acceptingOrders).toBe(false);
+    expect(status.orderingBlockedReason).toBe('CAPACITY_PAUSED');
+  });
+
+  it('clears the block reason when ordering is live', () => {
+    const status = getStoreStatus(atIst('2026-07-27', 21, 0));
+    expect(status.acceptingOrders).toBe(true);
+    expect(status.orderingBlockedReason).toBeNull();
+    expect(orderingBlockedMessage(status)).toBeNull();
+  });
+
+  it('produces a distinct message per reason', () => {
+    const before = orderingBlockedMessage(getStoreStatus(atIst('2026-07-27', 16, 0)));
+    const after = orderingBlockedMessage(getStoreStatus(atIst('2026-07-28', 4, 30)));
+    const paused = orderingBlockedMessage(
+      getStoreStatus(atIst('2026-07-27', 23, 30), { capacityLoad: 1 }),
+    );
+
+    expect(before).toMatch(/opens at 7 PM/);
+    expect(before).toMatch(/3h 0m/); // 16:00 → 19:00
+    expect(after).toMatch(/reopens at 7 PM/);
+    expect(paused).toMatch(/capacity/i);
+    expect(new Set([before, after, paused]).size).toBe(3);
   });
 });
 
