@@ -17,8 +17,15 @@ const TABS = [
  * Bottom-anchored rather than a top bar: on a 6.5" phone held one-handed at 1 AM, the top of the
  * screen is out of thumb reach. Every primary destination sits in the natural arc.
  */
+/** Surfaces that are not the customer app and must not carry customer navigation. */
+const STAFF_ROUTES = ['/kitchen'];
+
 export function BottomNav() {
   const pathname = usePathname();
+
+  // The kitchen board is a wall-mounted kiosk with zero navigation by design — a customer tab bar
+  // on it is both useless and a way for a chef to lose the queue mid-service.
+  if (STAFF_ROUTES.some((route) => pathname.startsWith(route))) return null;
 
   return (
     <nav

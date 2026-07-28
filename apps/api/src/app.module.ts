@@ -6,6 +6,8 @@ import { DatabaseModule } from './core/database/database.module.js';
 import { CacheModule } from './core/cache/cache.module.js';
 import { HealthModule } from './core/health/health.module.js';
 import { AllExceptionsFilter } from './core/errors/all-exceptions.filter.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { OrderingModule } from './modules/ordering/ordering.module.js';
 
 /**
  * Root module.
@@ -16,7 +18,15 @@ import { AllExceptionsFilter } from './core/errors/all-exceptions.filter.js';
  * enforced in CI, not by convention (05-folder-structure.md §3).
  */
 @Module({
-  imports: [AppConfigModule, LoggingModule, DatabaseModule, CacheModule, HealthModule],
+  imports: [
+    AppConfigModule,
+    LoggingModule,
+    DatabaseModule,
+    CacheModule,
+    HealthModule,
+    CatalogModule,
+    OrderingModule,
+  ],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
 })
 export class AppModule {}
