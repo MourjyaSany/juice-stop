@@ -35,7 +35,14 @@ export const envSchema = z
     CORS_ORIGINS: csv,
 
     // ── Data ───────────────────────────────────────────────────────────────────────────────────
-    DATABASE_URL: z.string().url(),
+    // Accepts a SQLite path (`file:./dev.db`) as well as a server URL, so the same schema works
+    // whether the database is a local file or managed Postgres.
+    DATABASE_URL: z
+      .string()
+      .min(1)
+      .refine((v) => v.startsWith('file:') || /^[a-z]+:\/\//.test(v), {
+        message: 'DATABASE_URL must be a file: path or a scheme://host URL',
+      }),
     DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
     DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
     REDIS_URL: z.string().url(),

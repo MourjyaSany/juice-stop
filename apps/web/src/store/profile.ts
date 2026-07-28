@@ -2,22 +2,24 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { isValidBlock } from '@/data/blocks';
 
 /**
  * Customer profile and address book.
  *
- * Persisted to localStorage for now. In M1 this becomes the server-owned profile behind
- * phone-OTP auth, and this store keeps only the hydrated copy — the shape here is deliberately
- * the shape of the API response so that swap is a fetch, not a rewrite.
+ * Persisted to localStorage for now; the shape deliberately matches the API response so moving
+ * to the server is a fetch, not a rewrite. Nothing sensitive is stored — no tokens, no payment
+ * details.
  *
- * Nothing sensitive is stored: no tokens, no payment details. Access tokens live in memory only
- * and refresh tokens in httpOnly cookies (01-system-architecture.md §10).
+ * Every address is inside Abode Valley Complex by construction: the only variable part of the
+ * location is `block`, and that is constrained to a known list.
  */
 
 export interface SavedAddress {
   id: string;
   label: string;
-  buildingId: string;
+  /** One of BLOCKS. Validated on write and on read. */
+  block: string;
   flatOrRoom: string;
   floor: string;
   landmark: string;
@@ -40,12 +42,11 @@ export interface ProfileState {
   reset: () => void;
 }
 
-const newId = () =>
-  `addr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const newId = () => `addr_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 export const useProfile = create<ProfileState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       fullName: '',
       phone: '',
       email: '',
@@ -61,8 +62,8 @@ export const useProfile = create<ProfileState>()(
       addAddress: (address) => {
         const id = newId();
         set((s) => {
-          // The first address saved is always the default — otherwise a customer can end up
-          // with addresses but no deliverable one, and checkout silently has nowhere to go.
+          // The first address saved is always the default — otherwise a customer can end up with
+          // addresses but no deliverable one, and checkout silently has nowhere to go.
           const makeDefault = address.isDefault === true || s.addresses.length === 0;
           const next: SavedAddress = { ...address, id, isDefault: makeDefault };
           return {
@@ -90,21 +91,31 @@ export const useProfile = create<ProfileState>()(
         }),
 
       setDefaultAddress: (id) =>
-        set((s) => ({
-          addresses: s.addresses.map((a) => ({ ...a, isDefault: a.id === id })),
-        })),
+        set((s) => ({ addresses: s.addresses.map((a) => ({ ...a, isDefault: a.id === id })) })),
 
       reset: () => set({ fullName: '', phone: '', email: '', addresses: [] }),
     }),
     {
       name: 'juice-stop:profile',
-      version: 1,
+      version: 2,
       partialize: (s) => ({
         fullName: s.fullName,
         phone: s.phone,
         email: s.email,
         addresses: s.addresses,
       }),
+      /**
+       * v1 stored a `buildingId` pointing at a multi-building catalogue that no longer exists.
+       * Those addresses cannot be mapped to a block, and guessing would send a rider to the wrong
+       * door — so they are dropped and the customer re-adds one. Losing an address is annoying;
+       * delivering to a wrong address is worse.
+       */
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<ProfileState> | undefined;
+        if (state === undefined) return persisted as ProfileState;
+        if (version < 2) return { ...state, addresses: [] } as ProfileState;
+        return state as ProfileState;
+      },
     },
   ),
 );
@@ -121,6 +132,10 @@ export interface ProfileReadiness {
 export const isValidIndianPhone = (phone: string): boolean =>
   /^[6-9]\d{9}$/.test(phone.replace(/\D/g, ''));
 
+/** An address is deliverable only if its block is one we actually serve. */
+export const isDeliverable = (address: SavedAddress): boolean =>
+  isValidBlock(address.block) && address.flatOrRoom.trim().length > 0;
+
 /**
  * What still has to be filled in before an order can be placed.
  *
@@ -133,13 +148,13 @@ export function checkProfileReadiness(state: {
   addresses: SavedAddress[];
 }): ProfileReadiness {
   const missing: string[] = [];
+  const deliverable = state.addresses.filter(isDeliverable);
 
   if (state.fullName.trim().length < 2) missing.push('your name');
   if (!isValidIndianPhone(state.phone)) missing.push('a valid phone number');
-  if (state.addresses.length === 0) missing.push('a delivery address');
+  if (deliverable.length === 0) missing.push('a delivery address');
 
-  const defaultAddress =
-    state.addresses.find((a) => a.isDefault) ?? state.addresses[0] ?? null;
+  const defaultAddress = deliverable.find((a) => a.isDefault) ?? deliverable[0] ?? null;
 
   return { ready: missing.length === 0, missing, defaultAddress };
 }

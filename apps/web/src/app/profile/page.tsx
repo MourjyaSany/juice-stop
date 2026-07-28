@@ -14,7 +14,7 @@ import {
 } from '@/components/icons';
 import { Button, Card, EmptyState, Field, Input, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
 import { AddressSheet } from '@/components/address-sheet';
-import { BUILDING_TYPE_LABEL, findBuilding } from '@/data/buildings';
+import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { checkProfileReadiness, isValidIndianPhone, useProfile, type SavedAddress } from '@/store/profile';
 
 export default function ProfilePage() {
@@ -231,8 +231,6 @@ function AddressRow({
   onDelete: () => void;
   onMakeDefault: () => void;
 }) {
-  const building = findBuilding(address.buildingId);
-
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
@@ -247,18 +245,19 @@ function AddressRow({
                 Default
               </span>
             )}
-            {building !== undefined && (
-              <span className="text-[10px] text-[var(--color-text-tertiary)]">
-                {BUILDING_TYPE_LABEL[building.type]}
-              </span>
-            )}
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+              style={{ background: 'rgb(255 107 26 / 0.16)', color: 'var(--color-orange-500)' }}
+            >
+              {blockLabel(address.block)}
+            </span>
           </div>
 
           <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-secondary)]">
             {address.flatOrRoom}
             {address.floor.length > 0 && `, Floor ${address.floor}`}
             <br />
-            {building?.name ?? 'Unknown building'}
+            {COMPLEX_NAME}
             {address.landmark.length > 0 && ` · ${address.landmark}`}
           </p>
 
@@ -266,13 +265,6 @@ function AddressRow({
             <PhoneIcon size={13} />
             {address.contactName} · {address.contactPhone}
           </p>
-
-          {/* Building-level intel the rider actually needs. */}
-          {building?.gateNote !== undefined && (
-            <p className="mt-2 text-xs" style={{ color: 'var(--color-warning)' }}>
-              {building.gateNote}
-            </p>
-          )}
         </div>
 
         <div className="flex shrink-0 gap-1">

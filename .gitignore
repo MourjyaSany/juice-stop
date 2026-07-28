@@ -47,7 +47,10 @@ infra/docker/data/
 
 # prisma — the client is generated from schema.prisma on every build
 packages/db/generated/
+# The SQLite database itself is local state, rebuilt with `pnpm db:migrate && pnpm db:seed`.
+# Migrations ARE committed; the data file is not.
 packages/db/prisma/*.db
+packages/db/prisma/*.db-journal
 packages/db/prisma/migrations/dev.db*
 
 # misc

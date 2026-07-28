@@ -7,21 +7,28 @@ import { Money } from '@juice-stop/core';
 import {
   ORDER_FLOW,
   STATUS_COPY,
+  editWindow,
   orderProgress,
   toPaise,
   useOrders,
   type OrderStatus,
   type PlacedOrder,
 } from '@/store/orders';
-import { CheckIcon, ChevronLeftIcon, ClockIcon, MapPinIcon, PhoneIcon } from '@/components/icons';
+import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
+import { CheckIcon, ChevronLeftIcon, ClockIcon, EditIcon, MapPinIcon, PhoneIcon } from '@/components/icons';
 import { BillSummary } from '@/components/bill-summary';
-import { Card, EmptyState, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
+import { OrderEditSheet } from '@/components/order-edit-sheet';
+import { Button, Card, EmptyState, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
+import { SPRING } from '@/components/motion-provider';
+import { AnimatePresence, m } from 'motion/react';
 
 export default function OrderTrackingPage() {
   const params = useParams<{ id: string }>();
   const hydrated = useHydrated();
   const orders = useOrders((s) => s.orders);
+  const confirmNow = useOrders((s) => s.confirmNow);
   const order = orders.find((o) => o.id === params.id);
+  const [editOpen, setEditOpen] = useState(false);
 
   // Re-render every second so the countdown and phase actually move. Cheap: one setState on a
   // page the customer is already staring at.
@@ -95,6 +102,13 @@ export default function OrderTrackingPage() {
 
         <CountdownRing progress={progress} delivered={delivered} />
 
+        <EditWindowCard
+          order={order}
+          now={now}
+          onEdit={() => setEditOpen(true)}
+          onConfirmNow={() => confirmNow(order.id)}
+        />
+
         {/* Phase timeline */}
         <Card className="mt-7 p-4">
           <ol className="space-y-0">
@@ -142,9 +156,10 @@ export default function OrderTrackingPage() {
                 <p className="font-semibold">{order.address.label}</p>
                 <p className="mt-0.5 leading-relaxed text-[var(--color-text-secondary)]">
                   {order.address.flatOrRoom}
-                  {order.address.floor.length > 0 && `, Floor ${order.address.floor}`}
+                  {order.address.floor.length > 0 && `, Floor ${order.address.floor}`},{' '}
+                  {blockLabel(order.address.block)}
                   <br />
-                  {order.address.buildingName}
+                  {COMPLEX_NAME}
                   {order.address.landmark.length > 0 && ` · ${order.address.landmark}`}
                 </p>
                 <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
@@ -198,7 +213,122 @@ export default function OrderTrackingPage() {
           </Card>
         </section>
       </div>
+
+      <OrderEditSheet order={order} open={editOpen} onClose={() => setEditOpen(false)} />
     </main>
+  );
+}
+
+/**
+ * The 10-minute grace window.
+ *
+ * Two states, deliberately different in weight: while open it is a warm, prominent card with a
+ * draining bar and a live countdown; once shut it collapses to a quiet locked strip. The change
+ * in visual weight *is* the message — a customer should feel the window close, not have to read
+ * that it did.
+ */
+function EditWindowCard({
+  order,
+  now,
+  onEdit,
+  onConfirmNow,
+}: {
+  order: PlacedOrder;
+  now: number;
+  onEdit: () => void;
+  onConfirmNow: () => void;
+}) {
+  const window = editWindow(order, now);
+  const minutes = Math.floor(window.secondsRemaining / 60);
+  const seconds = window.secondsRemaining % 60;
+  const urgent = window.secondsRemaining < 60;
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {window.open ? (
+        <m.div
+          key="open"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={SPRING.smooth}
+          className="mt-7 rounded-[18px] p-4"
+          style={{
+            background: 'linear-gradient(135deg, rgb(255 107 26 / 0.12), rgb(168 85 247 / 0.08))',
+            border: `1px solid ${urgent ? 'rgb(239 68 68 / 0.4)' : 'rgb(255 107 26 / 0.28)'}`,
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-display text-[0.9375rem] font-bold">Need to change something?</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+                Add items, change quantities or remove things — the kitchen hasn&apos;t started yet.
+              </p>
+            </div>
+            <span
+              className="tabular flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold"
+              style={{
+                background: urgent ? 'rgb(239 68 68 / 0.18)' : 'rgb(255 107 26 / 0.18)',
+                color: urgent ? 'var(--color-danger)' : 'var(--color-orange-500)',
+              }}
+            >
+              <ClockIcon size={13} />
+              {minutes}:{String(seconds).padStart(2, '0')}
+            </span>
+          </div>
+
+          {/* Drains rather than fills — a shrinking bar reads as "running out". */}
+          <div
+            className="mt-3 h-1.5 w-full overflow-hidden rounded-full"
+            style={{ background: 'rgb(0 0 0 / 0.35)' }}
+          >
+            <div
+              className="h-full rounded-full transition-[width] duration-1000 ease-linear"
+              style={{
+                width: `${Math.max(0, (1 - window.elapsed) * 100)}%`,
+                background: urgent ? 'var(--color-danger)' : 'var(--gradient-brand)',
+              }}
+            />
+          </div>
+
+          <div className="mt-3.5 flex gap-2.5">
+            <Button size="sm" className="flex-1" onClick={onEdit}>
+              <EditIcon size={15} />
+              Edit order
+            </Button>
+            {/* Skipping the window removes the 10-minute penalty for anyone who is already sure. */}
+            <Button size="sm" variant="secondary" className="flex-1" onClick={onConfirmNow}>
+              Cook it now
+            </Button>
+          </div>
+
+          {order.editCount > 0 && (
+            <p className="mt-2.5 text-center text-[11px] text-[var(--color-text-tertiary)]">
+              Edited {order.editCount} {order.editCount === 1 ? 'time' : 'times'}
+            </p>
+          )}
+        </m.div>
+      ) : (
+        <m.div
+          key="closed"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING.smooth}
+          className="mt-7 flex items-center gap-2.5 rounded-[14px] px-4 py-3"
+          style={{ background: 'var(--color-inset)', border: '1px solid var(--color-border-subtle)' }}
+        >
+          <span style={{ color: 'var(--color-text-tertiary)' }}>
+            <ClockIcon size={16} />
+          </span>
+          <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
+            <span className="font-semibold text-[var(--color-text-primary)]">
+              This order is being prepared.
+            </span>{' '}
+            The edit window has closed and it can no longer be changed.
+          </p>
+        </m.div>
+      )}
+    </AnimatePresence>
   );
 }
 

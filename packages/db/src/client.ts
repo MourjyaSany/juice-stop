@@ -21,13 +21,20 @@ export interface PrismaClientOptions {
 export function buildPrismaOptions(options: PrismaClientOptions): Prisma.PrismaClientOptions {
   const { databaseUrl, logQueries = false, statementTimeoutMs = 10_000 } = options;
 
-  const url = new URL(databaseUrl);
-  url.searchParams.set('statement_timeout', String(statementTimeoutMs));
+  // SQLite takes a file path, not a server URL, and has no statement_timeout parameter — appending
+  // one produces a path that no longer resolves. The timeout only applies to server databases.
+  const url = databaseUrl.startsWith('file:')
+    ? databaseUrl
+    : (() => {
+        const parsed = new URL(databaseUrl);
+        parsed.searchParams.set('statement_timeout', String(statementTimeoutMs));
+        return parsed.toString();
+      })();
 
   const log: Prisma.LogLevel[] = logQueries ? ['query', 'info', 'warn', 'error'] : ['warn', 'error'];
 
   return {
-    datasources: { db: { url: url.toString() } },
+    datasources: { db: { url } },
     log,
     errorFormat: 'pretty',
   };

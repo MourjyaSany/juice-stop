@@ -1,86 +1,34 @@
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
-//  JUICE STOP — database schema
+//  JUICE STOP — database schema (SQLite)
 //
-//  Authority: docs/02-data-model.md. Conventions that are NOT negotiable:
-//    · Money is BigInt paise, always suffixed *Paise                        (ADR-003)
-//    · Primary keys are UUIDv7 via uuid_generate_v7()                       (ADR-009)
-//    · businessDate is a GENERATED STORED column, never written by the app  (ADR-010)
-//    · Timestamps are timestamptz, stored UTC, rendered IST
-//    · outletId is present from day one so multi-outlet is additive later
+//  Docker was removed from the project, so Postgres went with it. SQLite gives us a real
+//  database — real migrations, real constraints, real persistence — as a single file on disk with
+//  zero infrastructure.
 //
-//  This file covers M0–M1 (identity, catalog, platform). Ordering, payments, delivery and
-//  finance models arrive in M2–M6 — their tables are specified in docs/02-data-model.md.
+//  What SQLite costs us versus the Postgres design in docs/02-data-model.md, and how each is
+//  handled:
+//
+//    · No enums          → CHECK-style discipline in app code + `@default` values. The allowed
+//                          values live in packages/core so they cannot drift.
+//    · No native arrays  → stored as JSON text and parsed at the repository boundary.
+//    · No PostGIS        → not needed. We deliver to one complex; serviceability is a block
+//                          lookup, not a polygon query (see apps/web/src/data/blocks.ts).
+//    · No generated cols → businessDate is computed by the app via toBusinessDate() (ADR-010),
+//                          which is the same function the frontend uses.
+//    · No citext         → emails are lower-cased on write.
+//
+//  Money remains BigInt paise throughout (ADR-003). SQLite stores it as INTEGER, which is 64-bit
+//  — the invariant survives the move intact.
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
 
 generator client {
-  provider        = "prisma-client-js"
-  output          = "../generated/client"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
+  output   = "../generated/client"
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  extensions = [postgis, pg_trgm, citext, pgcrypto, btree_gin]
-}
-
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-//  ENUMS
-// ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-enum UserStatus {
-  ACTIVE
-  SUSPENDED
-  BANNED
-  DELETED
-}
-
-enum AuthProvider {
-  PHONE
-  GOOGLE
-  EMAIL
-}
-
-enum StaffType {
-  KITCHEN
-  RIDER
-  ADMIN
-  SUPPORT
-}
-
-enum StaffStatus {
-  ACTIVE
-  ON_LEAVE
-  OFFBOARDED
-}
-
-enum OtpPurpose {
-  LOGIN
-  SIGNUP
-  PHONE_VERIFY
-  ORDER_CONFIRM
-}
-
-enum ModifierSelectType {
-  SINGLE
-  MULTI
-}
-
-enum KitchenStation {
-  GRILL
-  FRYER
-  BEVERAGE
-  ASSEMBLY
-  DESSERT
-}
-
-enum StockMovementReason {
-  RESTOCK
-  SALE
-  WASTE
-  CORRECTION
-  RELEASE
-  DAILY_RESET
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -88,7 +36,7 @@ enum StockMovementReason {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 model Outlet {
-  id        String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  id        String   @id @default(cuid())
   name      String
   slug      String   @unique
   timezone  String   @default("Asia/Kolkata")
@@ -98,306 +46,125 @@ model Outlet {
   gstin     String?
   fssaiNo   String?  @map("fssai_license_no")
   isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  categories    Category[]
-  products      Product[]
-  staffProfiles StaffProfile[]
-  menuVersions  MenuVersion[]
-  storeHours    StoreHours[]
-  storeOverride StoreOverride[]
+  categories Category[]
+  products   Product[]
+  orders     Order[]
 
   @@map("outlets")
 }
 
-/// Runtime configuration. Every write is audited — these values control whether the shop can trade.
+/// Runtime configuration — store hours, capacity thresholds, feature flags.
+/// `value` is JSON text; the typed accessors live in the platform module.
 model Setting {
   key         String   @id
-  value       Json
+  value       String
   description String?
-  updatedById String?  @map("updated_by") @db.Uuid
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
 }
 
-/// Kill switches. The first line of defence during an incident — flip a flag, no deploy (ADR-015).
-model FeatureFlag {
-  key            String   @id
-  enabled        Boolean  @default(false)
-  rolloutPercent Int      @default(0) @map("rollout_percent")
-  payload        Json?
-  description    String?
-  updatedById    String?  @map("updated_by") @db.Uuid
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@map("feature_flags")
-}
-
-model StoreHours {
-  id        String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  outletId  String   @map("outlet_id") @db.Uuid
-  dayOfWeek Int      @map("day_of_week") // 0 = Sunday
-  opensAt   String   @map("opens_at") // "19:00"
-  closesAt  String   @map("closes_at") // "04:00" (next day)
-  isClosed  Boolean  @default(false) @map("is_closed")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
-
-  @@unique([outletId, dayOfWeek])
-  @@map("store_hours")
-}
-
-/// Holiday mode and one-off overrides. Keyed on business date, never calendar date.
-model StoreOverride {
-  id           String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  outletId     String   @map("outlet_id") @db.Uuid
-  businessDate DateTime @map("business_date") @db.Date
-  isClosed     Boolean  @default(false) @map("is_closed")
-  opensAt      String?  @map("opens_at")
-  closesAt     String?  @map("closes_at")
-  reason       String?
-  createdById  String?  @map("created_by") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
-
-  @@unique([outletId, businessDate])
-  @@map("store_overrides")
-}
-
-/// Transactional outbox (ADR-006). Written inside the domain transaction; relayed by the worker.
-/// A socket event must never fire for a transaction that later rolls back.
-model OutboxEvent {
-  id            String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  aggregateType String    @map("aggregate_type")
-  aggregateId   String    @map("aggregate_id") @db.Uuid
-  eventType     String    @map("event_type")
-  payload       Json
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
-  attempts      Int       @default(0)
-  lastError     String?   @map("last_error")
-
-  @@index([aggregateType, aggregateId])
-  @@index([createdAt])
-  @@map("outbox_events")
-}
-
-/// Idempotency store. Mobile networks retry; we must not create two orders or two refunds.
-model IdempotencyKey {
-  key              String    @id
-  userId           String?   @map("user_id") @db.Uuid
-  endpoint         String
-  requestHash      String    @map("request_hash")
-  responseSnapshot Json?     @map("response_snapshot")
-  statusCode       Int?      @map("status_code")
-  status           String    @default("IN_PROGRESS")
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
-  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
-
-  @@index([expiresAt])
-  @@index([userId])
-  @@map("idempotency_keys")
-}
-
-/// Append-only. A BEFORE UPDATE OR DELETE trigger raises on any modification (migration 0002).
+/// Append-only. Every privileged action lands here (README §3 invariant 10).
 model AuditLog {
-  id                 String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  actorUserId        String?  @map("actor_user_id") @db.Uuid
-  actorRole          String?  @map("actor_role")
-  impersonatorUserId String?  @map("impersonator_user_id") @db.Uuid
-  action             String
-  entityType         String   @map("entity_type")
-  entityId           String?  @map("entity_id") @db.Uuid
-  before             Json?
-  after              Json?
-  ipAddress          String?  @map("ip_address")
-  userAgent          String?  @map("user_agent")
-  requestId          String?  @map("request_id")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  id          String   @id @default(cuid())
+  actorUserId String?  @map("actor_user_id")
+  actorRole   String?  @map("actor_role")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  before      String?
+  after       String?
+  ipAddress   String?  @map("ip_address")
+  requestId   String?  @map("request_id")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([entityType, entityId, createdAt])
-  @@index([actorUserId, createdAt])
   @@index([createdAt])
   @@map("audit_logs")
 }
 
+/// Transactional outbox (ADR-006) — side effects emitted only for committed transactions.
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  eventType     String    @map("event_type")
+  payload       String
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+/// Mobile networks retry. We must not create two orders or two refunds.
+model IdempotencyKey {
+  key              String   @id
+  userId           String?  @map("user_id")
+  endpoint         String
+  requestHash      String   @map("request_hash")
+  responseSnapshot String?  @map("response_snapshot")
+  statusCode       Int?     @map("status_code")
+  status           String   @default("IN_PROGRESS")
+  createdAt        DateTime @default(now()) @map("created_at")
+  expiresAt        DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-//  IDENTITY & ACCESS
+//  IDENTITY
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id              String     @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  phoneE164       String?    @unique @map("phone_e164")
-  phoneVerifiedAt DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
-  email           String?    @unique @db.Citext
-  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz(6)
-  passwordHash    String?    @map("password_hash")
-  fullName        String?    @map("full_name")
-  avatarUrl       String?    @map("avatar_url")
-  referralCode    String     @unique @map("referral_code")
-  referredByUserId String?   @map("referred_by_user_id") @db.Uuid
-  status          UserStatus @default(ACTIVE)
-  riskScore       Int        @default(0) @map("risk_score") @db.SmallInt
-  codStrikes      Int        @default(0) @map("cod_strikes")
-  isGuest         Boolean    @default(false) @map("is_guest")
-  preferences     Json       @default("{}")
-  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(6)
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  id              String    @id @default(cuid())
+  phoneE164       String?   @unique @map("phone_e164")
+  phoneVerifiedAt DateTime? @map("phone_verified_at")
+  /// Lower-cased on write — SQLite has no citext.
+  email           String?   @unique
+  passwordHash    String?   @map("password_hash")
+  fullName        String?   @map("full_name")
+  /// CUSTOMER | KITCHEN | RIDER | ADMIN | SUPER_ADMIN
+  role            String    @default("CUSTOMER")
+  status          String    @default("ACTIVE")
+  isGuest         Boolean   @default(false) @map("is_guest")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
 
-  identities   UserIdentity[]
-  roles        UserRole[]
-  sessions     Session[]
-  staffProfile StaffProfile?
-  auditLogs    AuditLog[]     @relation("AuditActor")
-  referredBy   User?          @relation("Referrals", fields: [referredByUserId], references: [id], onDelete: SetNull)
-  referrals    User[]         @relation("Referrals")
+  addresses Address[]
+  orders    Order[]
 
   @@index([status])
-  @@index([createdAt])
   @@map("users")
 }
 
-model UserIdentity {
-  id          String       @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  userId      String       @map("user_id") @db.Uuid
-  provider    AuthProvider
-  providerUid String       @map("provider_uid")
-  rawProfile  Json?        @map("raw_profile")
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerUid])
-  @@index([userId])
-  @@map("user_identities")
-}
-
-model Role {
-  id          String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  key         String   @unique
-  name        String
-  description String?
-  isSystem    Boolean  @default(false) @map("is_system")
-  /// Higher rank = more privilege. A user may never grant a role at or above their own rank.
-  rank        Int      @default(0)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  permissions RolePermission[]
-  users       UserRole[]
-
-  @@map("roles")
-}
-
-model Permission {
-  id          String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  /// Format: `module:action`, e.g. `orders:refund`. Guards check permissions, never role names.
-  key         String   @unique
-  module      String
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  roles RolePermission[]
-
-  @@index([module])
-  @@map("permissions")
-}
-
-model RolePermission {
-  roleId       String @map("role_id") @db.Uuid
-  permissionId String @map("permission_id") @db.Uuid
-
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-  @@map("role_permissions")
-}
-
-model UserRole {
-  userId     String   @map("user_id") @db.Uuid
-  roleId     String   @map("role_id") @db.Uuid
-  grantedById String? @map("granted_by") @db.Uuid
-  grantedAt  DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@id([userId, roleId])
-  @@map("user_roles")
-}
-
-/// Refresh-token sessions with rotation lineage. Replaying a rotated token revokes the whole
-/// family and forces re-login — the theft-detection mechanism (01-system-architecture.md §10).
-model Session {
-  id                  String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  userId              String    @map("user_id") @db.Uuid
-  refreshTokenHash    String    @unique @map("refresh_token_hash")
-  familyId            String    @map("family_id") @db.Uuid
-  replacedBySessionId String?   @map("replaced_by_session_id") @db.Uuid
-  deviceId            String?   @map("device_id")
-  deviceName          String?   @map("device_name")
-  ipAddress           String?   @map("ip_address")
-  userAgent           String?   @map("user_agent")
-  expiresAt           DateTime  @map("expires_at") @db.Timestamptz(6)
-  revokedAt           DateTime? @map("revoked_at") @db.Timestamptz(6)
-  revokedReason       String?   @map("revoked_reason")
-  lastUsedAt          DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(6)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+/// Every address is inside Abode Valley Complex; only `block` varies, constrained to a known set.
+model Address {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  label        String    @default("Home")
+  block        String
+  flatOrRoom   String    @map("flat_or_room")
+  floor        String?
+  landmark     String?
+  contactName  String    @map("contact_name")
+  contactPhone String    @map("contact_phone")
+  isDefault    Boolean   @default(false) @map("is_default")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([familyId])
-  @@index([expiresAt])
-  @@map("sessions")
-}
-
-/// OTP codes are stored hashed and are single-use. Rate limits live in Redis (04-api-spec.md §3).
-model OtpRequest {
-  id         String     @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  phoneE164  String     @map("phone_e164")
-  codeHash   String     @map("code_hash")
-  purpose    OtpPurpose
-  attempts   Int        @default(0)
-  maxAttempts Int       @default(3) @map("max_attempts")
-  expiresAt  DateTime   @map("expires_at") @db.Timestamptz(6)
-  consumedAt DateTime?  @map("consumed_at") @db.Timestamptz(6)
-  ipAddress  String?    @map("ip_address")
-  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  @@index([phoneE164, createdAt])
-  @@index([expiresAt])
-  @@map("otp_requests")
-}
-
-model StaffProfile {
-  id                  String      @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  userId              String      @unique @map("user_id") @db.Uuid
-  outletId            String      @map("outlet_id") @db.Uuid
-  employeeCode        String      @unique @map("employee_code")
-  type                StaffType
-  /// Encrypted with pgcrypto. Mandatory for ADMIN and above.
-  totpSecretEncrypted String?     @map("totp_secret_encrypted")
-  totpEnabled         Boolean     @default(false) @map("totp_enabled")
-  joinedAt            DateTime    @default(now()) @map("joined_at") @db.Date
-  status              StaffStatus @default(ACTIVE)
-  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
-
-  @@index([outletId, type, status])
-  @@map("staff_profiles")
+  @@map("addresses")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -405,191 +172,173 @@ model StaffProfile {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 model Category {
-  id            String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  outletId      String    @map("outlet_id") @db.Uuid
-  name          String
-  slug          String    @unique
-  description   String?
-  imageUrl      String?   @map("image_url")
-  sortOrder     Int       @default(0) @map("sort_order")
-  isActive      Boolean   @default(true) @map("is_active")
-  /// Time-windowed availability, e.g. a category that only appears after 22:00.
-  availableFrom String?   @map("available_from")
-  availableTo   String?   @map("available_to")
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  id        String    @id
+  outletId  String    @map("outlet_id")
+  /// food | snacks | drinks | combos — the top-level navigation grouping.
+  groupId   String    @map("group_id")
+  name      String
+  emoji     String    @default("🍽️")
+  note      String?
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   outlet   Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
   products Product[]
 
-  @@index([outletId, isActive, sortOrder])
+  @@index([outletId, groupId, sortOrder])
   @@map("categories")
 }
 
 model Product {
-  id                  String          @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  outletId            String          @map("outlet_id") @db.Uuid
-  categoryId          String          @map("category_id") @db.Uuid
-  name                String
-  slug                String          @unique
-  description         String?
-  shortTagline        String?         @map("short_tagline")
-  basePricePaise      BigInt          @map("base_price_paise")
-  compareAtPricePaise BigInt?         @map("compare_at_price_paise")
-  imageUrl            String?         @map("image_url")
-  blurhash            String?
-  tags                String[]        @default([])
-  isVeg               Boolean         @default(false) @map("is_veg")
-  spiceLevel          Int             @default(0) @map("spice_level") @db.SmallInt
-  /// Drives the honest ETA computation (ADR-013).
-  prepTimeSeconds     Int             @default(300) @map("prep_time_seconds")
-  kitchenStation      KitchenStation  @default(ASSEMBLY) @map("kitchen_station")
-  /// Basis points: 500 = 5.00% GST on restaurant service.
-  gstRateBps          Int             @default(500) @map("gst_rate_bps")
-  hsnSacCode          String?         @map("hsn_sac_code")
-  isActive            Boolean         @default(true) @map("is_active")
-  sortOrder           Int             @default(0) @map("sort_order")
-  popularityScore     Int             @default(0) @map("popularity_score")
-  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt           DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  id              String    @id
+  outletId        String    @map("outlet_id")
+  categoryId      String    @map("category_id")
+  name            String
+  description     String?
+  isVeg           Boolean   @default(true) @map("is_veg")
+  /// Drives the honest ETA (ADR-013).
+  prepTimeSeconds Int       @default(420) @map("prep_time_seconds")
+  /// JSON array of tag strings — SQLite has no native arrays.
+  tagsJson        String    @default("[]") @map("tags_json")
+  inStock         Boolean   @default(true) @map("in_stock")
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
 
-  outlet         Outlet                 @relation(fields: [outletId], references: [id], onDelete: Cascade)
-  category       Category               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  variants       ProductVariant[]
-  modifierGroups ProductModifierGroup[]
-  stock          ProductStock[]
-  stockMovements StockMovement[]
+  outlet   Outlet           @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  category Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  variants ProductVariant[]
+  addOns   ProductAddOn[]
 
-  @@index([outletId, isActive, sortOrder])
-  @@index([categoryId, isActive])
+  @@index([outletId, categoryId, sortOrder])
   @@map("products")
 }
 
 model ProductVariant {
-  id              String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  productId       String    @map("product_id") @db.Uuid
-  name            String
-  /// May be negative (e.g. a smaller size priced below base).
-  priceDeltaPaise BigInt    @default(0) @map("price_delta_paise")
-  sku             String?   @unique
-  isDefault       Boolean   @default(false) @map("is_default")
-  isActive        Boolean   @default(true) @map("is_active")
-  sortOrder       Int       @default(0) @map("sort_order")
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  stock   ProductStock[]
-
-  @@index([productId, isActive])
-  @@map("product_variants")
-}
-
-model ModifierGroup {
-  id         String             @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  id         String  @id
+  productId  String  @map("product_id")
   name       String
-  minSelect  Int                @default(0) @map("min_select") @db.SmallInt
-  maxSelect  Int                @default(1) @map("max_select") @db.SmallInt
-  isRequired Boolean            @default(false) @map("is_required")
-  selectType ModifierSelectType @default(SINGLE) @map("select_type")
-  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  modifiers Modifier[]
-  products  ProductModifierGroup[]
-
-  @@map("modifier_groups")
-}
-
-model Modifier {
-  id              String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  groupId         String   @map("group_id") @db.Uuid
-  name            String
-  priceDeltaPaise BigInt   @default(0) @map("price_delta_paise")
-  maxQty          Int      @default(1) @map("max_qty") @db.SmallInt
-  isActive        Boolean  @default(true) @map("is_active")
-  /// The kitchen can 86 a single topping without deactivating it permanently.
-  isAvailable     Boolean  @default(true) @map("is_available")
-  sortOrder       Int      @default(0) @map("sort_order")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  group ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-
-  @@index([groupId, isActive])
-  @@map("modifiers")
-}
-
-model ProductModifierGroup {
-  productId String @map("product_id") @db.Uuid
-  groupId   String @map("group_id") @db.Uuid
-  sortOrder Int    @default(0) @map("sort_order")
-
-  product Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
-  group   ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-
-  @@id([productId, groupId])
-  @@map("product_modifier_groups")
-}
-
-/// Sellable stock. Postgres is the source of truth; Redis only caches it (README §3 invariant 9).
-/// CHECK (available_qty >= 0) and CHECK (reserved_qty >= 0) are added in migration 0002.
-model ProductStock {
-  id                 String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  productId          String   @map("product_id") @db.Uuid
-  variantId          String?  @map("variant_id") @db.Uuid
-  availableQty       Int      @default(0) @map("available_qty")
-  reservedQty        Int      @default(0) @map("reserved_qty")
-  lowStockThreshold  Int      @default(5) @map("low_stock_threshold")
-  isManuallyDisabled Boolean  @default(false) @map("is_manually_disabled")
-  autoDisableAtZero  Boolean  @default(true) @map("auto_disable_at_zero")
-  /// Stock is tracked per business day and reset at service open.
-  trackingDate       DateTime @map("tracking_date") @db.Date
-  version            Int      @default(0)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-
-  @@index([productId])
-  @@index([trackingDate])
-  @@map("product_stock")
-}
-
-/// Append-only movement log. Every unit is accounted for.
-model StockMovement {
-  id        String              @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  productId String              @map("product_id") @db.Uuid
-  variantId String?             @map("variant_id") @db.Uuid
-  delta     Int
-  reason    StockMovementReason
-  refType   String?             @map("ref_type")
-  refId     String?             @map("ref_id") @db.Uuid
-  actorId   String?             @map("actor_id") @db.Uuid
-  note      String?
-  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Integer paise. Never a float, never rupees (ADR-003).
+  pricePaise BigInt  @map("price_paise")
+  sortOrder  Int     @default(0) @map("sort_order")
+  isActive   Boolean @default(true) @map("is_active")
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  @@index([productId, createdAt])
-  @@map("stock_movements")
+  @@index([productId])
+  @@map("product_variants")
 }
 
-/// Immutable menu snapshot. Orders reference a version so a price edit at 01:00 can never
-/// retroactively change a placed order (ADR-011).
-model MenuVersion {
-  id            String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
-  outletId      String   @map("outlet_id") @db.Uuid
-  version       Int
-  snapshot      Json
-  publishedById String?  @map("published_by") @db.Uuid
-  publishedAt   DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+/// Add-ons whose price can depend on the chosen size (extra cheese is 40/60/70 by pizza size).
+model ProductAddOn {
+  id                  String  @id
+  productId           String  @map("product_id")
+  name                String
+  /// Flat price when the add-on does not scale with size.
+  pricePaise          BigInt? @map("price_paise")
+  /// JSON map of variantId → paise, for size-dependent pricing.
+  priceByVariantJson  String? @map("price_by_variant_json")
+  isAvailable         Boolean @default(true) @map("is_available")
 
-  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  @@unique([outletId, version])
-  @@index([outletId, publishedAt])
-  @@map("menu_versions")
+  @@index([productId])
+  @@map("product_add_ons")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+//  ORDERING
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+model Order {
+  id          String   @id @default(cuid())
+  outletId    String   @map("outlet_id")
+  orderNumber String   @unique @map("order_number")
+  /// Computed by the app via toBusinessDate() — the service day crosses midnight (ADR-010).
+  businessDate String  @map("business_date")
+  userId      String?  @map("user_id")
+
+  /// PLACED | ACCEPTED | PREPARING | READY | OUT_FOR_DELIVERY | DELIVERED | CANCELLED
+  status      String   @default("PLACED")
+
+  /// Immutable copy of the address at placement.
+  addressJson String   @map("address_json")
+
+  subtotalPaise    BigInt @map("subtotal_paise")
+  deliveryFeePaise BigInt @default(0) @map("delivery_fee_paise")
+  handlingFeePaise BigInt @default(0) @map("handling_fee_paise")
+  taxPaise         BigInt @default(0) @map("tax_paise")
+  totalPaise       BigInt @map("total_paise")
+
+  /// UPI | CARD | COD
+  paymentMethod String  @map("payment_method")
+  paymentStatus String  @default("PENDING") @map("payment_status")
+
+  placedAt      DateTime @default(now()) @map("placed_at")
+  /// End of the 10-minute customer grace window; the kitchen holds until it passes.
+  editableUntil DateTime @map("editable_until")
+  /// The honest ETA we grade ourselves against.
+  promisedAt    DateTime @map("promised_at")
+  deliveredAt   DateTime? @map("delivered_at")
+
+  prepSeconds  Int    @default(0) @map("prep_seconds")
+  editCount    Int    @default(0) @map("edit_count")
+  customerNote String? @map("customer_note")
+  /// sha256 of the delivery OTP — the plaintext is never stored.
+  otpHash      String @map("otp_hash")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  /// Optimistic lock: two admins, one order, no lost update.
+  version   Int      @default(0)
+
+  outlet Outlet            @relation(fields: [outletId], references: [id], onDelete: Restrict)
+  user   User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items  OrderItem[]
+  events OrderStatusEvent[]
+
+  @@index([outletId, businessDate, status])
+  @@index([userId, placedAt])
+  @@index([status, placedAt])
+  @@map("orders")
+}
+
+/// Prices are snapshotted here (ADR-011) — a menu edit must never change a placed order.
+model OrderItem {
+  id                String @id @default(cuid())
+  orderId           String @map("order_id")
+  productId         String? @map("product_id")
+  variantId         String? @map("variant_id")
+  nameSnapshot      String @map("name_snapshot")
+  variantNameSnapshot String? @map("variant_name_snapshot")
+  /// JSON array of selected add-on names.
+  addOnsJson        String @default("[]") @map("add_ons_json")
+  unitPricePaise    BigInt @map("unit_price_paise")
+  quantity          Int
+  lineTotalPaise    BigInt @map("line_total_paise")
+  note              String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+/// Full audit trail of the lifecycle — written by the state machine, never by a controller.
+model OrderStatusEvent {
+  id         String   @id @default(cuid())
+  orderId    String   @map("order_id")
+  fromStatus String?  @map("from_status")
+  toStatus   String   @map("to_status")
+  actorRole  String?  @map("actor_role")
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_events")
 }

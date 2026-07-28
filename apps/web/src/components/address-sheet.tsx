@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { BUILDINGS, BUILDING_TYPE_LABEL } from '@/data/buildings';
+import { m } from 'motion/react';
+import { BLOCKS, COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { isValidIndianPhone, useProfile, type SavedAddress } from '@/store/profile';
-import { Button, Field, Input, Select } from './ui';
+import { CheckIcon, ChevronRightIcon, MapPinIcon } from './icons';
+import { Button, Field, Input } from './ui';
+import { SPRING } from './motion-provider';
 
 interface Draft {
   label: string;
-  buildingId: string;
+  block: string;
   flatOrRoom: string;
   floor: string;
   landmark: string;
@@ -17,7 +20,7 @@ interface Draft {
 
 const EMPTY: Draft = {
   label: 'Home',
-  buildingId: '',
+  block: '',
   flatOrRoom: '',
   floor: '',
   landmark: '',
@@ -25,12 +28,16 @@ const EMPTY: Draft = {
   contactPhone: '',
 };
 
+const LABEL_PRESETS = ['Home', 'Friend', 'Other'] as const;
+
 /**
  * Add / edit a delivery address.
  *
- * Building is chosen from the curated catalogue rather than typed free-hand (ADR-004): free-text
- * addresses get riders lost, blow out delivery times and make zone assignment guesswork. The
- * catalogue also carries gate instructions and per-building ETA adjustments.
+ * We deliver **only inside Abode Valley Complex**, so the location is not a question — it is
+ * stated as a fact at the top of the form. The only variable part is the block, and that is a
+ * constrained dropdown rather than free text: an address outside the complex, or in a block that
+ * doesn't exist, is not a slow delivery — it is a delivery that cannot happen. The form makes
+ * those states unrepresentable rather than merely discouraged.
  */
 export function AddressSheet({
   open,
@@ -46,8 +53,6 @@ export function AddressSheet({
   const [touched, setTouched] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Seed the form when the sheet opens, and prefill contact details from the profile so a
-  // returning customer is not retyping their own name and number.
   useEffect(() => {
     if (!open) return;
     setTouched(false);
@@ -55,23 +60,17 @@ export function AddressSheet({
       editing !== null
         ? {
             label: editing.label,
-            buildingId: editing.buildingId,
+            block: editing.block,
             flatOrRoom: editing.flatOrRoom,
             floor: editing.floor,
             landmark: editing.landmark,
             contactName: editing.contactName,
             contactPhone: editing.contactPhone,
           }
-        : {
-            ...EMPTY,
-            contactName: profile.fullName,
-            contactPhone: profile.phone,
-          },
+        : { ...EMPTY, contactName: profile.fullName, contactPhone: profile.phone },
     );
   }, [open, editing, profile.fullName, profile.phone]);
 
-  // Escape closes. Focus moves into the sheet so keyboard and screen-reader users are not
-  // stranded behind it.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -89,46 +88,45 @@ export function AddressSheet({
   if (!open) return null;
 
   const errors = {
-    buildingId: draft.buildingId.length === 0 ? 'Pick your building' : '',
-    flatOrRoom: draft.flatOrRoom.trim().length === 0 ? 'Room or flat number is required' : '',
+    block: draft.block.length === 0 ? 'Select your block' : '',
+    flatOrRoom: draft.flatOrRoom.trim().length === 0 ? 'Flat number is required' : '',
     contactName: draft.contactName.trim().length < 2 ? 'Who should the rider ask for?' : '',
     contactPhone: !isValidIndianPhone(draft.contactPhone)
       ? 'Enter a 10-digit Indian mobile number'
       : '',
   };
   const valid = Object.values(errors).every((e) => e.length === 0);
+  const show = (key: keyof typeof errors) => (touched ? errors[key] : '');
 
   const submit = () => {
     setTouched(true);
     if (!valid) return;
-
-    if (editing !== null) {
-      profile.updateAddress(editing.id, draft);
-    } else {
-      profile.addAddress(draft);
-    }
+    if (editing !== null) profile.updateAddress(editing.id, draft);
+    else profile.addAddress(draft);
     onClose();
   };
 
-  const show = (key: keyof typeof errors) => (touched ? errors[key] : '');
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center">
-      <button
+    <div className="fixed inset-0 z-[70] flex items-end justify-center">
+      <m.button
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="absolute inset-0 bg-black/65 backdrop-blur-sm"
       />
 
-      <div
+      <m.div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={editing !== null ? 'Edit address' : 'Add address'}
         tabIndex={-1}
-        className="glass-strong relative max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] px-5 pb-8 pt-3 focus:outline-none"
-        style={{ animation: 'rise 0.32s cubic-bezier(0.16,1,0.3,1) both' }}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        transition={SPRING.smooth}
+        className="glass-strong relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] px-5 pb-8 pt-3 focus:outline-none"
       >
         <div
           aria-hidden
@@ -136,43 +134,101 @@ export function AddressSheet({
           style={{ background: 'var(--color-border-strong)' }}
         />
 
-        <h2 className="mt-4 font-display text-xl font-semibold">
+        <h2 className="mt-4 font-display text-xl font-bold tracking-[-0.01em]">
           {editing !== null ? 'Edit address' : 'New address'}
         </h2>
 
-        <div className="mt-5 space-y-4">
-          <Field label="Label" htmlFor="label" hint="Home, Hostel, Friend's place…">
-            <Input
-              id="label"
-              value={draft.label}
-              onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-              placeholder="Home"
-              maxLength={24}
-            />
-          </Field>
+        {/* Delivery area, stated rather than asked. */}
+        <div
+          className="mt-4 flex items-center gap-3 rounded-[14px] px-4 py-3"
+          style={{
+            background: 'linear-gradient(135deg, rgb(255 107 26 / 0.10), rgb(168 85 247 / 0.07))',
+            border: '1px solid rgb(255 107 26 / 0.22)',
+          }}
+        >
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+            style={{ background: 'var(--gradient-brand)', color: '#fff' }}
+          >
+            <MapPinIcon size={17} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-display text-sm font-bold">{COMPLEX_NAME}</p>
+            <p className="text-[11px] text-[var(--color-text-secondary)]">
+              The only area we deliver to
+            </p>
+          </div>
+          <span className="ml-auto shrink-0" style={{ color: 'var(--color-success)' }}>
+            <CheckIcon size={18} strokeWidth={2.6} />
+          </span>
+        </div>
 
-          <Field label="Building" htmlFor="building" required error={show('buildingId')}>
-            <Select
-              id="building"
-              value={draft.buildingId}
-              onChange={(e) => setDraft({ ...draft, buildingId: e.target.value })}
-            >
-              <option value="">Select your building…</option>
-              {BUILDINGS.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} · {BUILDING_TYPE_LABEL[b.type]}
-                </option>
-              ))}
-            </Select>
+        <div className="mt-5 space-y-4">
+          {/* Label as chips — three taps saved versus typing "Home" every time. */}
+          <div>
+            <p className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
+              Label
+            </p>
+            <div className="flex gap-2">
+              {LABEL_PRESETS.map((preset) => {
+                const active = draft.label === preset;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setDraft({ ...draft, label: preset })}
+                    aria-pressed={active}
+                    className="pressable flex-1 rounded-[11px] py-2.5 text-sm font-semibold transition-colors duration-200"
+                    style={
+                      active
+                        ? { background: 'var(--gradient-brand)', color: '#fff' }
+                        : {
+                            background: 'var(--color-inset)',
+                            color: 'var(--color-text-secondary)',
+                            border: '1px solid var(--color-border-subtle)',
+                          }
+                    }
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <Field label="Block" htmlFor="block" required error={show('block')}>
+            <div className="relative">
+              <select
+                id="block"
+                value={draft.block}
+                onChange={(e) => setDraft({ ...draft, block: e.target.value })}
+                className="h-12 w-full appearance-none rounded-[12px] border bg-[var(--color-inset)] px-4 pr-11 text-base text-[var(--color-text-primary)] focus:outline-none"
+                style={{ borderColor: show('block').length > 0 ? 'var(--color-danger)' : undefined }}
+              >
+                <option value="">Select your block…</option>
+                {BLOCKS.map((b) => (
+                  <option key={b} value={b}>
+                    {blockLabel(b)}
+                  </option>
+                ))}
+              </select>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rotate-90 text-[var(--color-text-tertiary)]"
+              >
+                <ChevronRightIcon size={16} />
+              </span>
+            </div>
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Room / flat" htmlFor="flat" required error={show('flatOrRoom')}>
+            <Field label="Flat number" htmlFor="flat" required error={show('flatOrRoom')}>
               <Input
                 id="flat"
                 value={draft.flatOrRoom}
                 onChange={(e) => setDraft({ ...draft, flatOrRoom: e.target.value })}
                 placeholder="412"
+                invalid={show('flatOrRoom').length > 0}
               />
             </Field>
             <Field label="Floor" htmlFor="floor">
@@ -201,6 +257,7 @@ export function AddressSheet({
               onChange={(e) => setDraft({ ...draft, contactName: e.target.value })}
               placeholder="Rahul"
               autoComplete="name"
+              invalid={show('contactName').length > 0}
             />
           </Field>
 
@@ -209,7 +266,7 @@ export function AddressSheet({
             htmlFor="contactPhone"
             required
             error={show('contactPhone')}
-            hint="The rider calls this number on arrival"
+            hint="The rider calls this on arrival"
           >
             <Input
               id="contactPhone"
@@ -222,9 +279,34 @@ export function AddressSheet({
               }
               placeholder="9876543210"
               autoComplete="tel-national"
+              invalid={show('contactPhone').length > 0}
             />
           </Field>
         </div>
+
+        {/* Live preview of exactly what the rider will see. */}
+        {draft.block.length > 0 && draft.flatOrRoom.trim().length > 0 && (
+          <m.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={SPRING.smooth}
+            className="mt-5 rounded-[12px] px-4 py-3"
+            style={{ background: 'var(--color-inset)' }}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+              Rider will see
+            </p>
+            <p className="mt-1 text-sm text-[var(--color-text-primary)]">
+              {draft.flatOrRoom}
+              {draft.floor.length > 0 && `, Floor ${draft.floor}`}, {blockLabel(draft.block)}
+              <br />
+              <span className="text-[var(--color-text-secondary)]">
+                {COMPLEX_NAME}
+                {draft.landmark.length > 0 && ` · ${draft.landmark}`}
+              </span>
+            </p>
+          </m.div>
+        )}
 
         <div className="mt-6 flex gap-3">
           <Button variant="secondary" size="lg" className="flex-1" onClick={onClose}>
@@ -234,7 +316,7 @@ export function AddressSheet({
             {editing !== null ? 'Save changes' : 'Save address'}
           </Button>
         </div>
-      </div>
+      </m.div>
     </div>
   );
 }

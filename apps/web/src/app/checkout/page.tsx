@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { getStoreStatus, Money, toBusinessDate } from '@juice-stop/core';
 import { priceCart, useCart } from '@/store/cart';
-import { useOrders } from '@/store/orders';
+import { EDIT_WINDOW_MS, useOrders } from '@/store/orders';
 import { checkProfileReadiness, useProfile } from '@/store/profile';
-import { findBuilding } from '@/data/buildings';
+import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
+import { estimateEtaSeconds, snapshotLines, snapshotTotals } from '@/lib/order-builder';
 import { CheckIcon, ChevronLeftIcon, MapPinIcon, UserIcon } from '@/components/icons';
 import { BillSummary } from '@/components/bill-summary';
 import { Button, Card, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
@@ -54,46 +55,35 @@ export default function CheckoutPage() {
     setPlacing(true);
 
     const placedAt = Date.now();
-    const building = findBuilding(selectedAddress.buildingId);
+    const etaSeconds = estimateEtaSeconds(totals.prepSeconds, status.capacityLoad);
 
-    // Honest ETA: kitchen prep + packing + travel including the building's own overhead
-    // (lift queues, gate checks), scaled by current kitchen load (ADR-013).
-    const travelSeconds = 6 * 60 + (building?.extraEtaMinutes ?? 3) * 60;
-    const loadFactor = 1 + status.capacityLoad * 0.6;
-    const etaSeconds = Math.round((totals.prepSeconds + 120 + travelSeconds) * loadFactor);
+    // The edit window runs in parallel with the kitchen queue, and the promise accounts for it:
+    // cooking starts when the order stops being changeable. Quoting from `placedAt` instead
+    // would guarantee every order arrives late by exactly the window length.
+    const editableUntil = placedAt + EDIT_WINDOW_MS;
 
     const order = place({
       businessDate: toBusinessDate(new Date(placedAt)),
       placedAt,
-      promisedAt: placedAt + etaSeconds * 1000,
+      editableUntil,
+      promisedAt: editableUntil + etaSeconds * 1000,
       prepSeconds: totals.prepSeconds,
       paymentMethod: method,
       customerNote: note.trim(),
+      sourceLines: lines,
       // Prices are snapshotted here (ADR-011): a menu edit at 01:00 must never retroactively
       // change an order that has already been placed and paid for.
-      lines: totals.lines.map((p) => ({
-        name: p.item.name,
-        variantName: p.item.variants.length > 1 ? p.variant.name : '',
-        addOnNames: p.addOnNames,
-        quantity: p.line.quantity,
-        unitPaiseStr: p.unitPaise.toString(),
-        totalPaiseStr: p.totalPaise.toString(),
-        note: p.line.note,
-      })),
+      lines: snapshotLines(totals),
       address: {
         label: selectedAddress.label,
-        buildingName: building?.name ?? 'Unknown building',
+        block: selectedAddress.block,
         flatOrRoom: selectedAddress.flatOrRoom,
         floor: selectedAddress.floor,
         landmark: selectedAddress.landmark,
         contactName: selectedAddress.contactName,
         contactPhone: selectedAddress.contactPhone,
       },
-      subtotalPaiseStr: totals.subtotalPaise.toString(),
-      deliveryFeePaiseStr: totals.deliveryFeePaise.toString(),
-      handlingFeePaiseStr: totals.handlingFeePaise.toString(),
-      taxPaiseStr: totals.taxPaise.toString(),
-      totalPaiseStr: totals.totalPaise.toString(),
+      ...snapshotTotals(totals),
     });
 
     clearCart();
@@ -161,7 +151,6 @@ export default function CheckoutPage() {
             <div className="mt-3 space-y-2.5">
               {profile.addresses.map((a) => {
                 const active = (selectedAddress?.id ?? '') === a.id;
-                const building = findBuilding(a.buildingId);
                 return (
                   <button
                     key={a.id}
@@ -189,19 +178,14 @@ export default function CheckoutPage() {
                       <span className="block font-display text-sm font-semibold">{a.label}</span>
                       <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">
                         {a.flatOrRoom}
-                        {a.floor.length > 0 && `, Floor ${a.floor}`} · {building?.name}
+                        {a.floor.length > 0 && `, Floor ${a.floor}`} · {blockLabel(a.block)}
+                        <br />
+                        {COMPLEX_NAME}
+                        {a.landmark.length > 0 && ` · ${a.landmark}`}
                       </span>
                       <span className="mt-1 block text-xs text-[var(--color-text-tertiary)]">
                         {a.contactName} · {a.contactPhone}
                       </span>
-                      {building?.gateNote !== undefined && (
-                        <span
-                          className="mt-1.5 block text-xs"
-                          style={{ color: 'var(--color-warning)' }}
-                        >
-                          {building.gateNote}
-                        </span>
-                      )}
                     </span>
                   </button>
                 );
