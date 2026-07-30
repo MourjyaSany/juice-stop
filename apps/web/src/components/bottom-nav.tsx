@@ -28,10 +28,21 @@ export function BottomNav() {
   if (STAFF_ROUTES.some((route) => pathname.startsWith(route))) return null;
 
   return (
+    // A floating island rather than a docked bar: detached from the bottom edge, always on screen,
+    // never part of the document flow. z-index sits above the grain overlay so nothing can
+    // obscure primary navigation.
     <nav
       aria-label="Primary"
-      className="glass-strong fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-[22px] px-2 pt-1.5"
-      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom))' }}
+      className="fixed inset-x-0 z-[10000] mx-auto w-[calc(100%-1.5rem)] max-w-[26rem] rounded-[22px] px-1.5 pt-1.5"
+      style={{
+        bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
+        paddingBottom: '0.375rem',
+        background: 'linear-gradient(180deg, rgba(24,18,26,0.92), rgba(16,12,20,0.94))',
+        backdropFilter: 'blur(24px) saturate(170%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(170%)',
+        border: '1px solid rgb(255 255 255 / 0.10)',
+        boxShadow: '0 16px 44px -14px rgb(0 0 0 / 0.85), 0 0 24px -18px rgb(255 107 26 / 0.9)',
+      }}
     >
       <ul className="flex items-stretch">
         {TABS.map(({ href, label, Icon }) => {

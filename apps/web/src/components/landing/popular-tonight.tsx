@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Money } from '@juice-stop/core';
 import { ITEMS, priceFrom } from '@/data/menu';
-import { assetForCategory } from '@/data/assets';
+import { assetForItem } from '@/data/assets';
 import { GeneratedImage, ScrollReveal, ScrollStagger, SectionHeading } from '@/components/system';
 import { ArrowRightIcon, DietMark } from '@/components/icons';
 
@@ -55,7 +55,7 @@ export function PopularTonight() {
               }}
             >
               <GeneratedImage
-                slug={assetForCategory(item.categoryId)}
+                slug={assetForItem(item.name, item.categoryId)}
                 rounded="14px"
                 className="aspect-square w-full transition-transform duration-500 group-hover:scale-[1.06]"
               />

@@ -14,21 +14,15 @@ import {
   type MenuItem,
 } from '@/data/menu';
 import { priceCart, useCart } from '@/store/cart';
+import { assetForItem } from '@/data/assets';
 import { ItemSheet } from './item-sheet';
 import { FloatingCart } from './floating-cart';
 import { QuantityStepper } from './quantity-stepper';
+import { GeneratedImage } from './system/generated-image';
 import { CheckIcon, DietMark, SearchIcon } from './icons';
 import { EmptyState, useHydrated } from './ui';
 import { SPRING } from './motion-provider';
 
-/** Stand-in for photography. Grouped by category so a card is never a generic plate. */
-const CATEGORY_EMOJI: Record<string, string> = {
-  'pizza-veg': '🍕', 'pizza-nonveg': '🍕', burgers: '🍔', sandwiches: '🥪', wraps: '🌯',
-  wings: '🍗', fried: '🍟', 'momos-maggie': '🍜', 'rice-noodles': '🍚', chinese: '🥡',
-  pasta: '🍝', gravy: '🍛', sizzlers: '🔥', snacks: '🥟', hot: '☕', juices: '🧃',
-  lemon: '🍋', mojito: '🌿', lassi: '🥛', falooda: '🍨', shakes: '🥤',
-  combos: '🎁', 'big-combos': '👑',
-};
 
 export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
   const hydrated = useHydrated();
@@ -357,19 +351,15 @@ function ItemCard({
         opacity: soldOut ? 0.45 : 1,
       }}
     >
-      {/* Plate: a soft radial pool of light behind the emoji, so it reads as a photo slot rather
-          than a floating character. */}
       <div
-        className="relative flex h-[3.75rem] w-[3.75rem] shrink-0 items-center justify-center rounded-[15px] text-[1.6rem] transition-transform duration-300 group-hover:scale-[1.04]"
-        style={{
-          background:
-            'radial-gradient(circle at 32% 28%, rgb(255 255 255 / 0.10), rgb(255 255 255 / 0.02) 62%)',
-          border: '1px solid rgb(255 255 255 / 0.06)',
-          filter: soldOut ? 'grayscale(1)' : undefined,
-        }}
-        aria-hidden
+        className="h-[4.25rem] w-[4.25rem] shrink-0 transition-transform duration-300 group-hover:scale-[1.05]"
+        style={{ filter: soldOut ? 'grayscale(1)' : undefined }}
       >
-        {CATEGORY_EMOJI[item.categoryId] ?? '🍽️'}
+        <GeneratedImage
+          slug={assetForItem(item.name, item.categoryId)}
+          rounded="15px"
+          className="h-full w-full"
+        />
       </div>
 
       <div className="min-w-0 flex-1">

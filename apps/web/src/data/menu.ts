@@ -1,16 +1,22 @@
 /**
  * The Juice Stop menu.
  *
- * Prices are written in **rupees** here for readability and converted to integer paise by `r()`.
- * Nothing downstream ever sees a rupee float — money crosses into the app as `bigint` paise and
- * stays that way (ADR-003).
+ * **Transcribed verbatim from the supplied price list.** Nothing here is inferred, rounded or
+ * invented — if a price is not in the source list, the item is not in this file. Prices are
+ * written in rupees for readability and converted once to integer paise by `r()`; nothing
+ * downstream ever sees a rupee float (ADR-003).
  *
- * Structure is three levels so the UI can stay compartmentalised rather than presenting one
- * 250-item wall:
+ * Two things worth knowing about the source data:
+ *   · Extra Cheese is priced for **Veg Pizza only** (40/60/70 by size) and for **Wraps** (flat 20).
+ *     Non-Veg Pizza has no cheese row, so none is offered — extrapolating one would be exactly the
+ *     kind of made-up price this file exists to avoid.
+ *   · The Chinese items carry "(Gravy/Dry)" in the name at a single price rather than as two
+ *     priced variants, so they are modelled as one item, as listed.
  *
- *   GROUP     Food · Snacks · Drinks · Combos      → top-level tabs
- *   CATEGORY  Pizza · Burgers · Milkshakes · …     → sections within a tab
- *   ITEM      with optional size VARIANTS and ADD-ONS
+ * Structure is three levels so ~195 items stay navigable:
+ *   GROUP     Food · Snacks · Drinks · Combos   → top-level tabs
+ *   CATEGORY  Veg Pizza · Burger · Milk Shake…  → sections within a tab
+ *   ITEM      with optional size variants and add-ons
  */
 
 import { Money, type Paise } from '@juice-stop/core';
@@ -29,7 +35,6 @@ export interface MenuVariant {
 export interface MenuAddOn {
   id: string;
   name: string;
-  /** Flat price, or a per-variant price when the add-on scales with size (e.g. extra cheese). */
   pricePaise?: Paise;
   priceByVariantId?: Record<string, Paise>;
 }
@@ -41,7 +46,6 @@ export interface MenuItem {
   name: string;
   description?: string;
   isVeg: boolean;
-  /** Always at least one. Single-price items carry one unnamed variant. */
   variants: MenuVariant[];
   addOns: MenuAddOn[];
   tags: string[];
@@ -76,442 +80,398 @@ export const GROUPS: readonly MenuGroup[] = [
 
 export const CATEGORIES: readonly MenuCategory[] = [
   { id: 'pizza-veg', groupId: 'food', name: 'Veg Pizza', emoji: '🍕' },
-  { id: 'pizza-nonveg', groupId: 'food', name: 'Non-Veg Pizza', emoji: '🍕' },
-  { id: 'burgers', groupId: 'food', name: 'Burgers', emoji: '🍔' },
-  { id: 'sandwiches', groupId: 'food', name: 'Sandwiches', emoji: '🥪' },
-  { id: 'wraps', groupId: 'food', name: 'Wraps', emoji: '🌯' },
+  { id: 'pizza-nonveg', groupId: 'food', name: 'Non Veg Pizza', emoji: '🍕' },
+  { id: 'burger', groupId: 'food', name: 'Burger', emoji: '🍔' },
+  { id: 'sandwich', groupId: 'food', name: 'Sandwich', emoji: '🥪' },
+  { id: 'wrap', groupId: 'food', name: 'Wrap', emoji: '🌯' },
   { id: 'wings', groupId: 'food', name: 'Chicken Wings', emoji: '🍗' },
-  { id: 'fried', groupId: 'food', name: 'Fried Snacks', emoji: '🍟' },
+  { id: 'fried-snacks', groupId: 'food', name: 'Fried Snacks', emoji: '🍟' },
   { id: 'momos-maggie', groupId: 'food', name: 'Momos & Maggie', emoji: '🍜' },
-  { id: 'rice-noodles', groupId: 'food', name: 'Rice & Noodles', emoji: '🍚' },
+  { id: 'loaded-fries', groupId: 'food', name: 'Loaded Fries', emoji: '🧀' },
+  { id: 'noodles', groupId: 'food', name: 'Noodles', emoji: '🍜' },
+  { id: 'fried-rice', groupId: 'food', name: 'Fried Rice', emoji: '🍚' },
   { id: 'chinese', groupId: 'food', name: 'Chinese', emoji: '🥡' },
   { id: 'pasta', groupId: 'food', name: 'Pasta', emoji: '🍝' },
-  { id: 'gravy', groupId: 'food', name: 'Gravy & Breads', emoji: '🍛' },
-  { id: 'sizzlers', groupId: 'food', name: 'Sizzlers', emoji: '🔥' },
+  { id: 'gravy', groupId: 'food', name: 'Gravy', emoji: '🍛' },
+  { id: 'chicken-stick', groupId: 'food', name: 'Chicken Stick', emoji: '🔥' },
+  { id: 'chicken-sizzling', groupId: 'food', name: 'Chicken Sizzling', emoji: '🔥' },
 
-  { id: 'snacks', groupId: 'snacks', name: 'Quick Snacks', emoji: '🥟' },
+  { id: 'snacks', groupId: 'snacks', name: 'Snacks', emoji: '🥟' },
 
-  { id: 'hot', groupId: 'drinks', name: 'Hot Beverages', emoji: '☕' },
-  { id: 'juices', groupId: 'drinks', name: 'Fresh Juices', emoji: '🧃' },
+  { id: 'hot', groupId: 'drinks', name: 'Hot Beverage', emoji: '☕' },
+  { id: 'juice', groupId: 'drinks', name: 'Fresh Juice', emoji: '🧃' },
   { id: 'lemon', groupId: 'drinks', name: 'Lemon Juice', emoji: '🍋' },
   { id: 'mojito', groupId: 'drinks', name: 'Mojito', emoji: '🌿' },
   { id: 'lassi', groupId: 'drinks', name: 'Lassi', emoji: '🥛' },
   { id: 'falooda', groupId: 'drinks', name: 'Falooda', emoji: '🍨' },
-  { id: 'shakes', groupId: 'drinks', name: 'Milkshakes', emoji: '🥤', note: 'All ₹70 unless marked' },
+  { id: 'shakes', groupId: 'drinks', name: 'Milk Shake', emoji: '🥤', note: 'All ₹70' },
 
-  { id: 'combos', groupId: 'combos', name: 'Combos', emoji: '🎁' },
-  { id: 'big-combos', groupId: 'combos', name: 'Big Combos', emoji: '👑' },
+  { id: 'combo', groupId: 'combos', name: 'Combo', emoji: '🎁' },
 ];
 
 /* ── Builders ───────────────────────────────────────────────────────────────────────────────── */
 
 let seq = 0;
-const nextId = (prefix: string) => `${prefix}-${(++seq).toString(36)}`;
+const nextId = (categoryId: string) => `${categoryId}-${(++seq).toString(36)}`;
 
-/** A single-price item. */
-function simple(
-  categoryId: string,
-  groupId: GroupId,
-  name: string,
-  price: number,
-  isVeg: boolean,
-  extras: Partial<Pick<MenuItem, 'description' | 'tags' | 'prepTimeSeconds' | 'addOns'>> = {},
-): MenuItem {
-  const id = nextId('i');
+interface Opts {
+  veg?: boolean;
+  desc?: string;
+  prep?: number;
+  tags?: string[];
+  addOns?: MenuAddOn[];
+}
+
+/** Single-price item. */
+function one(categoryId: string, groupId: GroupId, name: string, price: number, o: Opts = {}): MenuItem {
+  const id = nextId(categoryId);
   return {
     id,
     groupId,
     categoryId,
     name,
-    isVeg,
+    isVeg: o.veg ?? false,
     variants: [{ id: `${id}-v0`, name: 'Regular', pricePaise: r(price) }],
-    addOns: extras.addOns ?? [],
-    tags: extras.tags ?? [],
-    prepTimeSeconds: extras.prepTimeSeconds ?? 420,
+    addOns: o.addOns ?? [],
+    tags: o.tags ?? [],
+    prepTimeSeconds: o.prep ?? 420,
     inStock: true,
-    ...(extras.description !== undefined ? { description: extras.description } : {}),
+    ...(o.desc !== undefined ? { description: o.desc } : {}),
   };
 }
 
-/** An item sold in several sizes. */
+/** Item sold in several sizes. */
 function sized(
   categoryId: string,
   groupId: GroupId,
   name: string,
-  sizes: Array<[label: string, price: number]>,
-  isVeg: boolean,
-  extras: Partial<Pick<MenuItem, 'description' | 'tags' | 'prepTimeSeconds' | 'addOns'>> = {},
+  sizes: Array<[string, number]>,
+  o: Opts = {},
 ): MenuItem {
-  const id = nextId('i');
-  const variants = sizes.map(([label, price], index) => ({
-    id: `${id}-v${index}`,
+  const id = nextId(categoryId);
+  const variants = sizes.map(([label, price], i) => ({
+    id: `${id}-v${i}`,
     name: label,
     pricePaise: r(price),
   }));
-
-  // Extra cheese on pizza scales with size, so its price is keyed by variant.
-  const addOns =
-    extras.addOns ??
-    (categoryId.startsWith('pizza')
-      ? [
-          {
-            id: `${id}-cheese`,
-            name: 'Extra Cheese',
-            priceByVariantId: {
-              [variants[0]!.id]: r(40),
-              [variants[1]!.id]: r(60),
-              [variants[2]!.id]: r(70),
-            },
-          },
-        ]
-      : []);
-
   return {
     id,
     groupId,
     categoryId,
     name,
-    isVeg,
+    isVeg: o.veg ?? false,
     variants,
-    addOns,
-    tags: extras.tags ?? [],
-    prepTimeSeconds: extras.prepTimeSeconds ?? 720,
+    addOns: o.addOns ?? [],
+    tags: o.tags ?? [],
+    prepTimeSeconds: o.prep ?? 720,
     inStock: true,
-    ...(extras.description !== undefined ? { description: extras.description } : {}),
+    ...(o.desc !== undefined ? { description: o.desc } : {}),
   };
 }
 
-const CHEESE_20 = (owner: string): MenuAddOn[] => [
-  { id: `${owner}-cheese`, name: 'Extra Cheese', pricePaise: r(20) },
+/** Pizza sizes: Small / Medium / Large. */
+const P = (s: number, m: number, l: number): Array<[string, number]> => [
+  ['Small', s],
+  ['Medium', m],
+  ['Large', l],
 ];
+
+/** Extra Cheese for pizza — 40 / 60 / 70 by size, exactly as listed. */
+function pizzaCheese(item: MenuItem): MenuItem {
+  const [s, m, l] = item.variants;
+  return {
+    ...item,
+    addOns: [
+      {
+        id: `${item.id}-cheese`,
+        name: 'Extra Cheese',
+        priceByVariantId: { [s!.id]: r(40), [m!.id]: r(60), [l!.id]: r(70) },
+      },
+    ],
+  };
+}
+
+/** Extra Cheese for wraps — flat 20. */
+const wrapCheese = (id: string): MenuAddOn[] => [
+  { id: `${id}-cheese`, name: 'Extra Cheese', pricePaise: r(20) },
+];
+
+const veg: Opts = { veg: true };
 
 /* ── Items ──────────────────────────────────────────────────────────────────────────────────── */
 
-const PIZZA_VEG: MenuItem[] = [
-  sized('pizza-veg', 'food', 'Garlic', [['Small', 120], ['Medium', 180], ['Large', 270]], true),
-  sized('pizza-veg', 'food', 'Margherita', [['Small', 120], ['Medium', 180], ['Large', 270]], true, { tags: ['BESTSELLER'] }),
-  sized('pizza-veg', 'food', 'Cheese', [['Small', 120], ['Medium', 180], ['Large', 270]], true),
-  sized('pizza-veg', 'food', 'Corn', [['Small', 130], ['Medium', 200], ['Large', 290]], true),
-  sized('pizza-veg', 'food', 'Jalapeno', [['Small', 120], ['Medium', 180], ['Large', 280]], true),
-  sized('pizza-veg', 'food', 'Onion', [['Small', 120], ['Medium', 180], ['Large', 280]], true),
-  sized('pizza-veg', 'food', 'Veg', [['Small', 120], ['Medium', 180], ['Large', 280]], true),
-  sized('pizza-veg', 'food', 'Mexican', [['Small', 150], ['Medium', 200], ['Large', 310]], true),
-  sized('pizza-veg', 'food', 'Paneer Tandoori', [['Small', 160], ['Medium', 240], ['Large', 350]], true, { tags: ['TRENDING'] }),
-  sized('pizza-veg', 'food', 'Paneer Peri Peri', [['Small', 160], ['Medium', 240], ['Large', 350]], true),
-  sized('pizza-veg', 'food', 'Paneer BBQ', [['Small', 160], ['Medium', 240], ['Large', 350]], true),
+const VEG_PIZZA = [
+  sized('pizza-veg', 'food', 'Garlic', P(120, 180, 270), veg),
+  sized('pizza-veg', 'food', 'Margherita', P(120, 180, 270), { ...veg, tags: ['BESTSELLER'] }),
+  sized('pizza-veg', 'food', 'Cheese', P(120, 180, 270), veg),
+  sized('pizza-veg', 'food', 'Corn', P(130, 200, 290), veg),
+  sized('pizza-veg', 'food', 'Jalapeno', P(120, 180, 280), veg),
+  sized('pizza-veg', 'food', 'Onion', P(120, 180, 280), veg),
+  sized('pizza-veg', 'food', 'Veg', P(120, 180, 280), veg),
+  sized('pizza-veg', 'food', 'Mexican', P(150, 200, 310), veg),
+  sized('pizza-veg', 'food', 'Paneer Tandoori', P(160, 240, 350), { ...veg, tags: ['TRENDING'] }),
+  sized('pizza-veg', 'food', 'Paneer Peri Peri', P(160, 240, 350), veg),
+  sized('pizza-veg', 'food', 'Paneer BBQ', P(160, 240, 350), veg),
+].map(pizzaCheese);
+
+const NONVEG_PIZZA = [
+  sized('pizza-nonveg', 'food', 'Chicken', P(160, 240, 330), { tags: ['BESTSELLER'] }),
+  sized('pizza-nonveg', 'food', 'Pepperoni', P(170, 260, 360)),
+  sized('pizza-nonveg', 'food', 'Chicken Keema', P(170, 260, 360)),
+  sized('pizza-nonveg', 'food', 'Chicken BBQ', P(160, 250, 360)),
+  sized('pizza-nonveg', 'food', 'Chicken Tandoori', P(160, 270, 360)),
+  sized('pizza-nonveg', 'food', 'Chicken Peri Peri', P(160, 250, 360)),
+  sized('pizza-nonveg', 'food', 'Chicken Supreme', P(160, 260, 380), { tags: ['TRENDING'] }),
 ];
 
-const PIZZA_NONVEG: MenuItem[] = [
-  sized('pizza-nonveg', 'food', 'Chicken', [['Small', 160], ['Medium', 240], ['Large', 330]], false, { tags: ['BESTSELLER'] }),
-  sized('pizza-nonveg', 'food', 'Pepperoni', [['Small', 170], ['Medium', 260], ['Large', 360]], false),
-  sized('pizza-nonveg', 'food', 'Chicken Keema', [['Small', 170], ['Medium', 260], ['Large', 360]], false),
-  sized('pizza-nonveg', 'food', 'Chicken BBQ', [['Small', 160], ['Medium', 250], ['Large', 360]], false),
-  sized('pizza-nonveg', 'food', 'Chicken Mexican', [['Small', 160], ['Medium', 250], ['Large', 360]], false),
-  sized('pizza-nonveg', 'food', 'Chicken Tandoori', [['Small', 160], ['Medium', 270], ['Large', 360]], false),
-  sized('pizza-nonveg', 'food', 'Chicken Peri Peri', [['Small', 160], ['Medium', 250], ['Large', 360]], false),
-  sized('pizza-nonveg', 'food', 'Chicken Supreme', [['Small', 160], ['Medium', 260], ['Large', 380]], false, { tags: ['TRENDING'] }),
+const SANDWICH = [
+  one('sandwich', 'food', 'Veg Sandwich', 50, { ...veg, prep: 300 }),
+  one('sandwich', 'food', 'Egg Sandwich', 50, { prep: 300 }),
+  one('sandwich', 'food', 'Paneer Sandwich', 60, { ...veg, prep: 300 }),
+  one('sandwich', 'food', 'BBQ Paneer Sandwich', 80, { ...veg, prep: 330 }),
+  one('sandwich', 'food', 'Peri Peri Paneer Sandwich', 80, { ...veg, prep: 330 }),
+  one('sandwich', 'food', 'Tandoori Paneer Sandwich', 80, { ...veg, prep: 330 }),
+  one('sandwich', 'food', 'Chicken Sandwich', 60, { prep: 330 }),
+  one('sandwich', 'food', 'BBQ Chicken Sandwich', 80, { prep: 360 }),
+  one('sandwich', 'food', 'Peri Peri Chicken Sandwich', 80, { prep: 360 }),
+  one('sandwich', 'food', 'Tandoori Chicken Sandwich', 80, { prep: 360 }),
 ];
 
-const SANDWICHES: MenuItem[] = [
-  simple('sandwiches', 'food', 'Veg Sandwich', 50, true, { prepTimeSeconds: 300 }),
-  simple('sandwiches', 'food', 'Egg Sandwich', 50, false, { prepTimeSeconds: 300 }),
-  simple('sandwiches', 'food', 'Paneer Sandwich', 60, true, { prepTimeSeconds: 300 }),
-  simple('sandwiches', 'food', 'BBQ Paneer Sandwich', 80, true, { prepTimeSeconds: 330 }),
-  simple('sandwiches', 'food', 'Peri Peri Paneer Sandwich', 80, true, { prepTimeSeconds: 330 }),
-  simple('sandwiches', 'food', 'Tandoori Paneer Sandwich', 80, true, { prepTimeSeconds: 330 }),
-  simple('sandwiches', 'food', 'Chicken Sandwich', 60, false, { prepTimeSeconds: 330 }),
-  simple('sandwiches', 'food', 'BBQ Chicken Sandwich', 80, false, { prepTimeSeconds: 360 }),
-  simple('sandwiches', 'food', 'Peri Peri Chicken Sandwich', 80, false, { prepTimeSeconds: 360 }),
-  simple('sandwiches', 'food', 'Tandoori Chicken Sandwich', 80, false, { prepTimeSeconds: 360 }),
+const WRAP = [
+  one('wrap', 'food', 'Veg Wrap', 70, { ...veg, prep: 360 }),
+  one('wrap', 'food', 'Egg Wrap', 70, { prep: 360 }),
+  one('wrap', 'food', 'Paneer Wrap', 120, { ...veg, prep: 390 }),
+  one('wrap', 'food', 'BBQ Paneer Wrap', 140, { ...veg, prep: 390 }),
+  one('wrap', 'food', 'Peri Peri Paneer Wrap', 140, { ...veg, prep: 390 }),
+  one('wrap', 'food', 'Tandoori Paneer Wrap', 140, { ...veg, prep: 390 }),
+  one('wrap', 'food', 'Chicken Wrap', 120, { prep: 390, tags: ['BESTSELLER'] }),
+  one('wrap', 'food', 'BBQ Chicken Wrap', 140, { prep: 420 }),
+  one('wrap', 'food', 'Peri Peri Chicken Wrap', 140, { prep: 420 }),
+  one('wrap', 'food', 'Tandoori Chicken Wrap', 140, { prep: 420 }),
+].map((item) => ({ ...item, addOns: wrapCheese(item.id) }));
+
+const WINGS = [
+  one('wings', 'food', 'Fried Wings', 180, { prep: 480 }),
+  one('wings', 'food', 'BBQ Wings', 200, { prep: 510 }),
+  one('wings', 'food', 'Peri Peri Wings', 200, { prep: 510 }),
+  one('wings', 'food', 'Chicken Wings', 160, { prep: 480 }),
+  one('wings', 'food', 'BBQ Chicken Wings', 200, { prep: 510 }),
+  one('wings', 'food', 'Peri Peri Chicken Wings', 200, { prep: 510 }),
 ];
 
-const WRAPS: MenuItem[] = [
-  simple('wraps', 'food', 'Veg Wrap', 70, true, { addOns: CHEESE_20('wrap1'), prepTimeSeconds: 360 }),
-  simple('wraps', 'food', 'Egg Wrap', 70, false, { addOns: CHEESE_20('wrap2'), prepTimeSeconds: 360 }),
-  simple('wraps', 'food', 'Paneer Wrap', 120, true, { addOns: CHEESE_20('wrap3'), prepTimeSeconds: 390 }),
-  simple('wraps', 'food', 'BBQ Paneer Wrap', 140, true, { addOns: CHEESE_20('wrap4'), prepTimeSeconds: 390 }),
-  simple('wraps', 'food', 'Peri Peri Paneer Wrap', 140, true, { addOns: CHEESE_20('wrap5'), prepTimeSeconds: 390 }),
-  simple('wraps', 'food', 'Tandoori Paneer Wrap', 140, true, { addOns: CHEESE_20('wrap6'), prepTimeSeconds: 390 }),
-  simple('wraps', 'food', 'Chicken Wrap', 120, false, { addOns: CHEESE_20('wrap7'), tags: ['BESTSELLER'], prepTimeSeconds: 390 }),
-  simple('wraps', 'food', 'BBQ Chicken Wrap', 140, false, { addOns: CHEESE_20('wrap8'), prepTimeSeconds: 420 }),
-  simple('wraps', 'food', 'Peri Peri Chicken Wrap', 140, false, { addOns: CHEESE_20('wrap9'), prepTimeSeconds: 420 }),
-  simple('wraps', 'food', 'Tandoori Chicken Wrap', 140, false, { addOns: CHEESE_20('wrap10'), prepTimeSeconds: 420 }),
-];
-
-const BURGERS: MenuItem[] = [
-  simple('burgers', 'food', 'Veg Burger', 80, true, { prepTimeSeconds: 330 }),
-  simple('burgers', 'food', 'Paneer Burger', 90, true, { prepTimeSeconds: 360 }),
-  simple('burgers', 'food', 'Paneer BBQ Burger', 120, true, { prepTimeSeconds: 390 }),
-  simple('burgers', 'food', 'Paneer Tandoori Burger', 120, true, { prepTimeSeconds: 390 }),
-  simple('burgers', 'food', 'Paneer Peri Peri Burger', 120, true, { prepTimeSeconds: 390 }),
-  simple('burgers', 'food', 'Chicken Burger', 90, false, { prepTimeSeconds: 390 }),
-  simple('burgers', 'food', 'Chicken Zinger Burger', 130, false, { tags: ['BESTSELLER'], prepTimeSeconds: 420 }),
-  simple('burgers', 'food', 'Chicken BBQ Burger', 160, false, { prepTimeSeconds: 420 }),
-  simple('burgers', 'food', 'Chicken Tandoori Burger', 160, false, { prepTimeSeconds: 420 }),
-  simple('burgers', 'food', 'Chicken Peri Peri Burger', 160, false, { prepTimeSeconds: 420 }),
-  simple('burgers', 'food', 'Chicken Biggies Burger', 180, false, { prepTimeSeconds: 480 }),
-  simple('burgers', 'food', 'ChickZing Biggies Burger', 250, false, { tags: ['TRENDING'], prepTimeSeconds: 540 }),
-];
-
-const WINGS: MenuItem[] = [
-  simple('wings', 'food', 'Fried Wings', 180, false, { prepTimeSeconds: 480 }),
-  simple('wings', 'food', 'BBQ Wings', 200, false, { prepTimeSeconds: 510 }),
-  simple('wings', 'food', 'Peri Peri Wings', 200, false, { prepTimeSeconds: 510 }),
-  simple('wings', 'food', 'Chicken Wings', 160, false, { prepTimeSeconds: 480 }),
-  simple('wings', 'food', 'BBQ Chicken Wings', 200, false, { prepTimeSeconds: 510 }),
-  simple('wings', 'food', 'Peri Peri Chicken Wings', 200, false, { prepTimeSeconds: 510 }),
-];
-
-const FRIED: MenuItem[] = [
-  simple('fried', 'food', 'Veg Nuggets', 100, true, { description: '10 pcs', prepTimeSeconds: 300 }),
-  simple('fried', 'food', 'Chicken Nuggets', 100, false, { description: '6 pcs', prepTimeSeconds: 330 }),
-  sized('fried', 'food', 'Normal Fries', [['Half', 90], ['Full', 120]], true, { addOns: [], prepTimeSeconds: 300 }),
-  sized('fried', 'food', 'Peri Peri French Fries', [['Half', 90], ['Full', 140]], true, { addOns: [], tags: ['BESTSELLER'], prepTimeSeconds: 300 }),
-  simple('fried', 'food', 'Chicken Popcorn', 140, false, { description: '20 pcs', prepTimeSeconds: 360 }),
-];
-
-const MOMOS_MAGGIE: MenuItem[] = [
-  simple('momos-maggie', 'food', 'Plain Maggie', 40, true, { prepTimeSeconds: 300 }),
-  simple('momos-maggie', 'food', 'Cheese Maggie', 60, true, { tags: ['BESTSELLER'], prepTimeSeconds: 300 }),
-  simple('momos-maggie', 'food', 'Veg Maggie', 60, true, { prepTimeSeconds: 300 }),
-  simple('momos-maggie', 'food', 'Egg Maggie', 60, false, { prepTimeSeconds: 330 }),
-  simple('momos-maggie', 'food', 'Paneer Maggie', 60, true, { prepTimeSeconds: 330 }),
-  simple('momos-maggie', 'food', 'Chicken Maggie', 70, false, { prepTimeSeconds: 360 }),
-  sized('momos-maggie', 'food', 'Veg Momos', [['Steamed', 110], ['Fried', 110]], true, { addOns: [], prepTimeSeconds: 480 }),
-  sized('momos-maggie', 'food', 'Chicken Momos', [['Steamed', 110], ['Fried', 110]], false, { addOns: [], prepTimeSeconds: 510 }),
-];
-
-const RICE_NOODLES: MenuItem[] = [
-  simple('rice-noodles', 'food', 'Loaded Fries (Non Veg)', 180, false, { prepTimeSeconds: 420 }),
-  simple('rice-noodles', 'food', 'Peri Peri Loaded (Non Veg)', 200, false, { prepTimeSeconds: 420 }),
-  simple('rice-noodles', 'food', 'Peri Peri Loaded', 190, true, { prepTimeSeconds: 420 }),
-  simple('rice-noodles', 'food', 'Chicken Noodles', 120, false, { prepTimeSeconds: 480 }),
-  simple('rice-noodles', 'food', 'Mushroom Noodles', 140, true, { prepTimeSeconds: 480 }),
-  simple('rice-noodles', 'food', 'Chicken Fried Rice', 150, false, { tags: ['BESTSELLER'], prepTimeSeconds: 480 }),
-  simple('rice-noodles', 'food', 'Chicken Schezwan Fried Rice', 160, false, { prepTimeSeconds: 480 }),
-  simple('rice-noodles', 'food', 'Egg Fried Rice', 130, false, { prepTimeSeconds: 450 }),
-  simple('rice-noodles', 'food', 'Veg Fried Rice', 120, true, { prepTimeSeconds: 450 }),
-  simple('rice-noodles', 'food', 'Mushroom Fried Rice', 120, true, { prepTimeSeconds: 450 }),
-  simple('rice-noodles', 'food', 'Paneer Fried Rice', 140, true, { prepTimeSeconds: 480 }),
-];
-
-const CHINESE: MenuItem[] = [
-  sized('chinese', 'food', 'Honey Chicken', [['Gravy', 200], ['Dry', 200]], false, { addOns: [], prepTimeSeconds: 540 }),
-  sized('chinese', 'food', 'Chilly Chicken', [['Gravy', 200], ['Dry', 200]], false, { addOns: [], tags: ['TRENDING'], prepTimeSeconds: 540 }),
-  sized('chinese', 'food', 'Paneer Chilly', [['Gravy', 200], ['Dry', 200]], true, { addOns: [], prepTimeSeconds: 540 }),
-  sized('chinese', 'food', 'Mushroom Chilly', [['Gravy', 180], ['Dry', 180]], true, { addOns: [], prepTimeSeconds: 540 }),
-  simple('chinese', 'food', 'Chicken 65', 180, false, { description: '8 pcs', prepTimeSeconds: 480 }),
-];
-
-const PASTA: MenuItem[] = [
-  sized('pasta', 'food', 'White Sauce Pasta', [['Half', 180], ['Full', 200]], true, { addOns: [], prepTimeSeconds: 540 }),
-  sized('pasta', 'food', 'Red Sauce Pasta', [['Half', 180], ['Full', 200]], true, { addOns: [], prepTimeSeconds: 540 }),
-  sized('pasta', 'food', 'Mix Sauce Pasta', [['Half', 180], ['Full', 200]], true, { addOns: [], prepTimeSeconds: 540 }),
-  sized('pasta', 'food', 'Basil Pasta', [['Half', 180], ['Full', 200]], true, { addOns: [], prepTimeSeconds: 540 }),
-];
-
-const GRAVY: MenuItem[] = [
-  simple('gravy', 'food', 'Chicken Gravy', 160, false, { prepTimeSeconds: 540 }),
-  simple('gravy', 'food', 'Veg Kurma', 130, true, { prepTimeSeconds: 480 }),
-  simple('gravy', 'food', 'Porotta', 20, true, { prepTimeSeconds: 240 }),
-  simple('gravy', 'food', 'Chapathi', 10, true, { prepTimeSeconds: 240 }),
-];
-
-const SIZZLERS: MenuItem[] = [
-  simple('sizzlers', 'food', 'Chicken Stick', 349, false, {
-    description: 'Grilled chicken, broccoli, zucchini, pepper sauce, mashed potato',
-    tags: ['TRENDING'],
-    prepTimeSeconds: 900,
-  }),
-  simple('sizzlers', 'food', 'Chicken Sizzling', 399, false, {
-    description: 'Grilled chicken, broccoli, zucchini, rice, small fries, mushroom sauce',
-    tags: ['TRENDING'],
-    prepTimeSeconds: 960,
-  }),
-];
-
-const SNACKS: MenuItem[] = [
-  simple('snacks', 'snacks', 'Puri Biji', 15, true, { description: '1 pc', prepTimeSeconds: 180 }),
-  simple('snacks', 'snacks', 'Roti', 10, true, { description: '1 pc', prepTimeSeconds: 180 }),
-  simple('snacks', 'snacks', 'Parotta', 10, true, { description: '1 pc', prepTimeSeconds: 180 }),
-  simple('snacks', 'snacks', 'Jalebi', 20, true, { description: '100 g', prepTimeSeconds: 180 }),
-  simple('snacks', 'snacks', 'Boondi', 25, true, { description: '100 g', prepTimeSeconds: 180 }),
-  simple('snacks', 'snacks', 'Bhujiya', 20, true, { description: '100 g', prepTimeSeconds: 120 }),
-  simple('snacks', 'snacks', 'Namak Para', 20, true, { description: '100 g', prepTimeSeconds: 120 }),
-  simple('snacks', 'snacks', 'Khasta Nimki', 10, true, { prepTimeSeconds: 120 }),
-  simple('snacks', 'snacks', 'Malpua', 10, true, { prepTimeSeconds: 180 }),
-  simple('snacks', 'snacks', 'Gulab Jamun', 10, true, { prepTimeSeconds: 120 }),
-  simple('snacks', 'snacks', 'Goja', 10, true, { prepTimeSeconds: 120 }),
-  simple('snacks', 'snacks', 'Spring Roll', 10, true, { prepTimeSeconds: 240 }),
-  simple('snacks', 'snacks', 'Khurma', 10, true, { prepTimeSeconds: 120 }),
-  simple('snacks', 'snacks', 'Samosa', 15, true, { tags: ['BESTSELLER'], prepTimeSeconds: 240 }),
-  simple('snacks', 'snacks', 'Kachori', 15, true, { prepTimeSeconds: 240 }),
-  simple('snacks', 'snacks', 'Bread Pakora', 12, true, { prepTimeSeconds: 240 }),
-  simple('snacks', 'snacks', 'Chilli Pakora', 15, true, { prepTimeSeconds: 240 }),
-  simple('snacks', 'snacks', 'Potato Pakora', 15, true, { prepTimeSeconds: 240 }),
-  simple('snacks', 'snacks', 'Banana Pakora', 10, true, { prepTimeSeconds: 240 }),
-];
-
-const HOT: MenuItem[] = [
-  simple('hot', 'drinks', 'Coffee', 20, true, { prepTimeSeconds: 180 }),
-  simple('hot', 'drinks', 'Tea', 15, true, { prepTimeSeconds: 180 }),
-];
-
-const juice = (name: string, price: number, tags: string[] = []) =>
-  simple('juices', 'drinks', name, price, true, { tags, prepTimeSeconds: 210 });
-
-const JUICES: MenuItem[] = [
-  juice('Mosambi', 70),
-  juice('Watermelon', 50, ['BESTSELLER']),
-  juice('Pineapple', 50),
-  juice('Muskmelon', 50),
-  juice('Amla', 50),
-  juice('Guava', 50),
-  juice('Strawberry', 60),
-  juice('Anero (Fig)', 60),
-  juice('Grape', 50),
-  juice('Chikku', 60),
-  juice('Mango', 50),
-  juice('Pomegranate', 70),
-  juice('Orange', 70),
-];
-
-const LEMON: MenuItem[] = [
-  simple('lemon', 'drinks', 'Lemon Juice', 25, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Pineapple Lemon', 40, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Grape Lemon', 40, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Mint Lemon', 40, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Ginger Lemon', 30, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Strawberry Lemon', 60, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Orange Lemon', 50, true, { prepTimeSeconds: 180 }),
-  simple('lemon', 'drinks', 'Mango Lemon', 50, true, { prepTimeSeconds: 180 }),
-];
-
-const MOJITO: MenuItem[] = [
-  simple('mojito', 'drinks', 'Mint Lime', 60, true, { tags: ['BESTSELLER'], prepTimeSeconds: 210 }),
-  simple('mojito', 'drinks', 'Blue Lime', 60, true, { prepTimeSeconds: 210 }),
-  simple('mojito', 'drinks', 'Green Lime', 60, true, { prepTimeSeconds: 210 }),
-  simple('mojito', 'drinks', 'Orange Lime', 60, true, { prepTimeSeconds: 210 }),
-  simple('mojito', 'drinks', 'Strawberry Lime', 60, true, { prepTimeSeconds: 210 }),
-  simple('mojito', 'drinks', 'Pineapple Lime', 60, true, { prepTimeSeconds: 210 }),
-];
-
-const LASSI: MenuItem[] = [
-  simple('lassi', 'drinks', 'Sweet Lassi', 40, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Banana Lassi', 50, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Strawberry Lassi', 50, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Mango Lassi', 60, true, { tags: ['BESTSELLER'], prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Chikku Lassi', 50, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Vanilla Lassi', 50, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Choco Lassi', 50, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Pista Lassi', 50, true, { prepTimeSeconds: 210 }),
-  simple('lassi', 'drinks', 'Butterscotch Lassi', 50, true, { prepTimeSeconds: 210 }),
-];
-
-const FALOODA: MenuItem[] = [
-  simple('falooda', 'drinks', 'Rose Falooda', 110, true, { prepTimeSeconds: 300 }),
-  simple('falooda', 'drinks', 'Strawberry Falooda', 120, true, { prepTimeSeconds: 300 }),
-  simple('falooda', 'drinks', 'Chocolate Falooda', 120, true, { prepTimeSeconds: 300 }),
-  simple('falooda', 'drinks', 'Butterscotch Falooda', 120, true, { prepTimeSeconds: 300 }),
-  simple('falooda', 'drinks', 'Mixed Fruit Falooda', 130, true, { prepTimeSeconds: 300 }),
-  simple('falooda', 'drinks', 'Dry Fruit Falooda', 180, true, { prepTimeSeconds: 330 }),
-  simple('falooda', 'drinks', 'Special Falooda', 180, true, { tags: ['TRENDING'], prepTimeSeconds: 330 }),
-];
-
-const shake = (name: string, price = 70, tags: string[] = []) =>
-  simple('shakes', 'drinks', name, price, true, { tags, prepTimeSeconds: 240 });
-
-const SHAKES: MenuItem[] = [
-  shake('Rosemilk'),
-  shake('Oreo', 70, ['BESTSELLER']),
-  shake('Saudi'),
-  shake('Sharjah'),
-  shake('Apple'),
-  shake('Chikku'),
-  shake('Pomegranate'),
-  shake('Kiwi'),
-  shake('Papaya'),
-  shake('Anjeer'),
-  shake('Dates'),
-  shake('Mango'),
-  shake('Strawberry'),
-  shake('Cherry'),
-  shake('Banana'),
-  shake('Grape'),
-  shake('Muskmelon'),
-  shake('Butterscotch'),
-  shake('Vanilla'),
-  shake('Chocolate'),
-  shake('KitKat', 70, ['TRENDING']),
-  shake('Bourbon'),
-  shake('Snickers'),
-  shake('Galaxy'),
-  shake('Choco Banana'),
-  shake('Choco Chiku'),
-  shake('Choco Apple'),
-  shake('Pineapple'),
-  shake('Dry Fruits'),
-];
-
-const COMBOS: MenuItem[] = [
-  simple('combos', 'combos', 'Combo 1', 160, false, {
-    description: 'Chicken Wrap · Small French Fries · Soft Drink',
-    prepTimeSeconds: 600,
-  }),
-  simple('combos', 'combos', 'Combo 2', 150, false, {
-    description: 'Chicken Burger · Small French Fries · Soft Drink',
-    prepTimeSeconds: 600,
-  }),
-  simple('combos', 'combos', 'Combo 3', 190, false, {
-    description: 'Chicken Zinger · Small French Fries · Soft Drink',
+const FRIED_SNACKS = [
+  one('fried-snacks', 'food', 'Veg Nuggets', 100, { ...veg, desc: '10 pcs', prep: 300 }),
+  one('fried-snacks', 'food', 'Chicken Nuggets', 100, { desc: '6 pcs', prep: 330 }),
+  sized('fried-snacks', 'food', 'Normal Fries', [['Half', 90], ['Full', 120]], { ...veg, prep: 300 }),
+  sized('fried-snacks', 'food', 'Peri Peri French Fries', [['Half', 90], ['Full', 140]], {
+    ...veg,
+    prep: 300,
     tags: ['BESTSELLER'],
-    prepTimeSeconds: 660,
   }),
-  simple('combos', 'combos', 'Combo 4', 150, false, {
-    description: 'Chicken Sandwich · Small French Fries · Soft Drink',
-    prepTimeSeconds: 600,
-  }),
+  one('fried-snacks', 'food', 'Chicken Popcorn', 140, { desc: '20 pcs', prep: 360 }),
 ];
 
-const BIG_COMBOS: MenuItem[] = [
-  simple('big-combos', 'combos', 'Chicken Burger Combo', 299, false, {
-    description: 'Chicken Burger · Chicken Sandwich · Small Chicken Pizza · Small French Fries',
-    tags: ['TRENDING'],
-    prepTimeSeconds: 900,
+const MOMOS_MAGGIE = [
+  one('momos-maggie', 'food', 'Plain Maggie', 40, { ...veg, prep: 300 }),
+  one('momos-maggie', 'food', 'Cheese Maggie', 60, { ...veg, prep: 300, tags: ['BESTSELLER'] }),
+  one('momos-maggie', 'food', 'Veg Maggie', 60, { ...veg, prep: 300 }),
+  one('momos-maggie', 'food', 'Egg Maggie', 60, { prep: 330 }),
+  one('momos-maggie', 'food', 'Paneer Maggie', 60, { ...veg, prep: 330 }),
+  one('momos-maggie', 'food', 'Chicken Maggie', 70, { prep: 360 }),
+  sized('momos-maggie', 'food', 'Veg Momos', [['Steam', 110], ['Fried', 100]], { ...veg, prep: 480 }),
+  sized('momos-maggie', 'food', 'Chicken Momos', [['Steam', 110], ['Fried', 100]], { prep: 510 }),
+];
+
+const BURGER = [
+  one('burger', 'food', 'Veg Burger', 80, { ...veg, prep: 330 }),
+  one('burger', 'food', 'Paneer Burger', 90, { ...veg, prep: 360 }),
+  one('burger', 'food', 'Paneer BBQ Burger', 120, { ...veg, prep: 390 }),
+  one('burger', 'food', 'Paneer Tandoori Burger', 120, { ...veg, prep: 390 }),
+  one('burger', 'food', 'Paneer Peri Peri Burger', 120, { ...veg, prep: 390 }),
+  one('burger', 'food', 'Chicken Burger', 90, { prep: 390 }),
+  one('burger', 'food', 'Chicken Biggies Burger', 180, { prep: 480 }),
+  one('burger', 'food', 'Chicken BBQ Burger', 160, { prep: 420 }),
+  one('burger', 'food', 'Chicken Tandoori Burger', 160, { prep: 420 }),
+  one('burger', 'food', 'Chicken Peri Peri Burger', 160, { prep: 420 }),
+  one('burger', 'food', 'Chicken Zinger Burger', 130, { prep: 420, tags: ['BESTSELLER'] }),
+  one('burger', 'food', 'ChickZing Biggies Burger', 250, { prep: 540, tags: ['TRENDING'] }),
+];
+
+const LOADED_FRIES = [
+  one('loaded-fries', 'food', 'Loaded Fries (Non Veg)', 180, { prep: 420 }),
+  one('loaded-fries', 'food', 'Peri Peri Loaded (Non Veg)', 200, { prep: 420 }),
+  one('loaded-fries', 'food', 'Peri Peri Paneer Loaded', 190, { ...veg, prep: 420 }),
+];
+
+const NOODLES = [
+  one('noodles', 'food', 'Chicken Noodles', 120, { prep: 480 }),
+  one('noodles', 'food', 'Mushroom Noodles', 140, { ...veg, prep: 480 }),
+];
+
+const FRIED_RICE = [
+  one('fried-rice', 'food', 'Chicken Fried Rice', 150, { prep: 480, tags: ['BESTSELLER'] }),
+  one('fried-rice', 'food', 'Chicken Schezwan Fried Rice', 160, { prep: 480 }),
+  one('fried-rice', 'food', 'Egg Fried Rice', 130, { prep: 450 }),
+  one('fried-rice', 'food', 'Veg Fried Rice', 120, { ...veg, prep: 450 }),
+  one('fried-rice', 'food', 'Mushroom Fried Rice', 120, { ...veg, prep: 450 }),
+  one('fried-rice', 'food', 'Paneer Fried Rice', 140, { ...veg, prep: 480 }),
+];
+
+const CHINESE = [
+  one('chinese', 'food', 'Honey Chicken (Gravy/Dry)', 200, { prep: 540 }),
+  one('chinese', 'food', 'Chilly Chicken (Gravy/Dry)', 200, { prep: 540, tags: ['TRENDING'] }),
+  one('chinese', 'food', 'Paneer Chilly (Gravy/Dry)', 200, { ...veg, prep: 540 }),
+  one('chinese', 'food', 'Mushroom Chilly (Gravy/Dry)', 180, { ...veg, prep: 540 }),
+  one('chinese', 'food', 'Chicken 65', 180, { desc: '8 pcs', prep: 480 }),
+];
+
+const PASTA = [
+  sized('pasta', 'food', 'White Sauce', [['Half', 180], ['Full', 200]], { ...veg, prep: 540 }),
+  sized('pasta', 'food', 'Red Sauce', [['Half', 180], ['Full', 200]], { ...veg, prep: 540 }),
+  sized('pasta', 'food', 'Mix Sauce', [['Half', 180], ['Full', 200]], { ...veg, prep: 540 }),
+  sized('pasta', 'food', 'Basil Pesto', [['Half', 180], ['Full', 200]], { ...veg, prep: 540 }),
+];
+
+const GRAVY = [
+  one('gravy', 'food', 'Chicken Gravy', 180, { prep: 540 }),
+  one('gravy', 'food', 'Veg Kurma', 130, { ...veg, prep: 480 }),
+  one('gravy', 'food', 'Porotta', 20, { ...veg, prep: 240 }),
+  one('gravy', 'food', 'Chapathi', 10, { ...veg, prep: 240 }),
+];
+
+const CHICKEN_STICK = [
+  one('chicken-stick', 'food', 'Grilled Chicken Stick', 349, { prep: 900, tags: ['TRENDING'] }),
+];
+
+const CHICKEN_SIZZLING = [
+  one('chicken-sizzling', 'food', 'Chicken Sizzling', 399, { prep: 960, tags: ['TRENDING'] }),
+];
+
+const SNACKS = [
+  one('snacks', 'snacks', 'Puri Bhaji', 15, { ...veg, prep: 180 }),
+  one('snacks', 'snacks', 'Roti', 15, { ...veg, prep: 180 }),
+  one('snacks', 'snacks', 'Parota', 10, { ...veg, prep: 180 }),
+  one('snacks', 'snacks', 'Jalebi', 20, { ...veg, prep: 180 }),
+  one('snacks', 'snacks', 'Boondi', 25, { ...veg, prep: 180 }),
+  one('snacks', 'snacks', 'Bhujiya', 20, { ...veg, prep: 120 }),
+  one('snacks', 'snacks', 'Namak Para', 20, { ...veg, prep: 120 }),
+  one('snacks', 'snacks', 'Khasta Nimki', 10, { ...veg, prep: 120 }),
+  one('snacks', 'snacks', 'Malpua', 10, { ...veg, prep: 180 }),
+  one('snacks', 'snacks', 'Gulab Jamun', 10, { ...veg, prep: 120 }),
+  one('snacks', 'snacks', 'Goja', 10, { ...veg, prep: 120 }),
+  one('snacks', 'snacks', 'Spring Roll', 10, { ...veg, prep: 240 }),
+  one('snacks', 'snacks', 'Khurma', 10, { ...veg, prep: 120 }),
+  one('snacks', 'snacks', 'Samosa', 10, { ...veg, prep: 240, tags: ['BESTSELLER'] }),
+  one('snacks', 'snacks', 'Kachori', 15, { ...veg, prep: 240 }),
+  one('snacks', 'snacks', 'Bread Pakora', 12, { ...veg, prep: 240 }),
+  one('snacks', 'snacks', 'Chilli Pakora', 15, { ...veg, prep: 240 }),
+  one('snacks', 'snacks', 'Potato Pakora', 15, { ...veg, prep: 240 }),
+  one('snacks', 'snacks', 'Banana Pakora', 10, { ...veg, prep: 240 }),
+];
+
+const HOT = [
+  one('hot', 'drinks', 'Coffee', 20, { ...veg, prep: 180 }),
+  one('hot', 'drinks', 'Tea', 15, { ...veg, prep: 180 }),
+];
+
+const JUICE = (
+  [
+    ['Mosambi', 70], ['Watermelon', 50], ['Pineapple', 50], ['Muskmelon', 50], ['Amla', 50],
+    ['Guava', 50], ['Strawberry', 60], ['Aner(Fig)', 50], ['Grape', 50], ['Chiku', 60],
+    ['Mango', 70], ['Pomegranate', 70], ['Orange', 70],
+  ] as Array<[string, number]>
+).map(([n, p]) =>
+  one('juice', 'drinks', n, p, { ...veg, prep: 210, ...(n === 'Watermelon' ? { tags: ['BESTSELLER'] } : {}) }),
+);
+
+const LEMON = (
+  [
+    ['Lemon Juice', 25], ['Pineapple Lemon', 40], ['Grape Lemon', 40], ['Mint Lemon', 40],
+    ['Ginger Lemon', 30], ['Strawberry Lemon', 50], ['Orange Lemon', 50], ['Mango Lemon', 50],
+  ] as Array<[string, number]>
+).map(([n, p]) => one('lemon', 'drinks', n, p, { ...veg, prep: 180 }));
+
+const MOJITO = (
+  [
+    ['Mint Lime', 60], ['Blue Lime', 60], ['Green Lime', 60],
+    ['Orange Lime', 60], ['Strawberry Lime', 60], ['Pineapple Lime', 60],
+  ] as Array<[string, number]>
+).map(([n, p]) =>
+  one('mojito', 'drinks', n, p, { ...veg, prep: 210, ...(n === 'Mint Lime' ? { tags: ['BESTSELLER'] } : {}) }),
+);
+
+const LASSI = (
+  [
+    ['Sweet', 40], ['Banana', 50], ['Strawberry', 50], ['Mango', 60], ['Chiku', 50],
+    ['Vanilla', 50], ['Choco', 50], ['Pista', 50], ['Butterscotch', 50],
+  ] as Array<[string, number]>
+).map(([n, p]) =>
+  one('lassi', 'drinks', n, p, { ...veg, prep: 210, ...(n === 'Mango' ? { tags: ['BESTSELLER'] } : {}) }),
+);
+
+const FALOODA = (
+  [
+    ['Rose', 110], ['Strawberry', 120], ['Chocolate', 120], ['Butterscotch', 120],
+    ['Mixed Fruit', 130], ['Dry Fruit', 140], ['Special', 180],
+  ] as Array<[string, number]>
+).map(([n, p]) =>
+  one('falooda', 'drinks', n, p, { ...veg, prep: 300, ...(n === 'Special' ? { tags: ['TRENDING'] } : {}) }),
+);
+
+const SHAKES = (
+  [
+    'Rosemilk', 'Oreo', 'Saudi', 'Sharjah', 'Apple', 'Chiku', 'Pomegranate', 'Kiwi', 'Papaya',
+    'Anjeer', 'Dates', 'Mango', 'Strawberry', 'Cherry', 'Banana', 'Grape', 'Muskmelon',
+    'Butterscotch', 'Vanilla', 'Chocolate', 'Kitkat', 'Bourbon', 'Snickers', 'Galaxy',
+    'Choco Banana', 'Choco Chiku', 'Choco Apple', 'Pineapple', 'Dry Fruits',
+  ] as string[]
+).map((n) =>
+  one('shakes', 'drinks', n, 70, {
+    ...veg,
+    prep: 240,
+    ...(n === 'Oreo' ? { tags: ['BESTSELLER'] } : n === 'Kitkat' ? { tags: ['TRENDING'] } : {}),
   }),
-  simple('big-combos', 'combos', 'Chicken Pizza Combo', 499, false, {
-    description: 'Large Chicken Pizza (7") · Two Large French Fries · Two Soft Drinks (600 ml)',
+);
+
+const COMBO = [
+  one('combo', 'combos', 'Chicken Wrap Combo', 160, {
+    desc: 'Chicken Wrap + Small French Fries + Soft Drink',
+    prep: 600,
+  }),
+  one('combo', 'combos', 'Chicken Burger Combo', 150, {
+    desc: 'Chicken Burger + Small French Fries + Soft Drink',
+    prep: 600,
+  }),
+  one('combo', 'combos', 'Chicken Zinger Combo', 190, {
+    desc: 'Chicken Zinger + Small French Fries + Soft Drink',
+    prep: 660,
+    tags: ['BESTSELLER'],
+  }),
+  one('combo', 'combos', 'Chicken Sandwich Combo', 150, {
+    desc: 'Chicken Sandwich + Small French Fries + Soft Drink',
+    prep: 600,
+  }),
+  one('combo', 'combos', 'Feast Combo', 299, {
+    desc: 'Chicken Burger + Chicken Sandwich + Chicken Pizza (S) + Small French Fries',
+    prep: 900,
     tags: ['TRENDING'],
-    prepTimeSeconds: 1080,
+  }),
+  one('combo', 'combos', 'Party Combo', 499, {
+    desc: 'Chicken Pizza (L) + 2 Large French Fries + 2 Soft Drinks (600ml)',
+    prep: 1080,
+    tags: ['TRENDING'],
   }),
 ];
 
 /* ── Export ─────────────────────────────────────────────────────────────────────────────────── */
 
 export const ITEMS: readonly MenuItem[] = [
-  ...PIZZA_VEG,
-  ...PIZZA_NONVEG,
-  ...BURGERS,
-  ...SANDWICHES,
-  ...WRAPS,
-  ...WINGS,
-  ...FRIED,
-  ...MOMOS_MAGGIE,
-  ...RICE_NOODLES,
-  ...CHINESE,
-  ...PASTA,
-  ...GRAVY,
-  ...SIZZLERS,
+  ...VEG_PIZZA, ...NONVEG_PIZZA, ...BURGER, ...SANDWICH, ...WRAP, ...WINGS, ...FRIED_SNACKS,
+  ...MOMOS_MAGGIE, ...LOADED_FRIES, ...NOODLES, ...FRIED_RICE, ...CHINESE, ...PASTA, ...GRAVY,
+  ...CHICKEN_STICK, ...CHICKEN_SIZZLING,
   ...SNACKS,
-  ...HOT,
-  ...JUICES,
-  ...LEMON,
-  ...MOJITO,
-  ...LASSI,
-  ...FALOODA,
-  ...SHAKES,
-  ...COMBOS,
-  ...BIG_COMBOS,
+  ...HOT, ...JUICE, ...LEMON, ...MOJITO, ...LASSI, ...FALOODA, ...SHAKES,
+  ...COMBO,
 ];
 
 export const TAG_LABELS: Record<string, string> = {
@@ -527,7 +487,7 @@ export const categoriesInGroup = (groupId: GroupId): MenuCategory[] =>
 export const itemsInCategory = (categoryId: string): MenuItem[] =>
   ITEMS.filter((i) => i.categoryId === categoryId);
 
-/** Lowest price across an item's variants — what the list row shows as "from ₹x". */
+/** Lowest price across an item's variants — what a list row shows as "from ₹x". */
 export const priceFrom = (item: MenuItem): Paise =>
   item.variants.reduce((min, v) => (v.pricePaise < min ? v.pricePaise : min), item.variants[0]!.pricePaise);
 

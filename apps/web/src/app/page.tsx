@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getStoreStatus, orderingBlockedMessage } from '@juice-stop/core';
 import { Hero } from '@/components/landing/hero';
+import { ActiveOrders } from '@/components/landing/active-orders';
 import { PopularTonight } from '@/components/landing/popular-tonight';
 import { TreasureMap } from '@/components/landing/treasure-map';
 import { ScrollReveal } from '@/components/system';
@@ -26,6 +27,9 @@ export default function HomePage() {
   return (
     <main className="page-in relative min-h-dvh overflow-x-hidden">
       <Hero status={status} />
+
+      {/* Anything of yours currently being cooked outranks everything else on this page. */}
+      <ActiveOrders />
 
       {blockedMessage !== null && (
         <div className="mx-auto w-full max-w-lg px-5">
@@ -58,7 +62,7 @@ export default function HomePage() {
       <TreasureMap />
 
       {/* ── Closing CTA ─────────────────────────────────────────────────────────────────── */}
-      <section className="relative mx-auto w-full max-w-lg px-5 pb-24">
+      <section className="pb-nav relative mx-auto w-full max-w-lg px-5">
         <ScrollReveal>
           <div
             className="relative overflow-hidden rounded-[24px] px-6 py-10 text-center"

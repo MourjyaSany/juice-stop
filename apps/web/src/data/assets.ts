@@ -88,32 +88,56 @@ export const findAsset = (slug: string): GeneratedAsset | undefined => BY_SLUG.g
 
 /* ── Category → asset ───────────────────────────────────────────────────────────────────────── */
 
-/** Menu category id → asset slug. Keeps the mapping in one place instead of per-component. */
+/** Menu category id → asset slug. One mapping, not a lookup reinvented per component. */
 export const CATEGORY_ASSET: Record<string, string> = {
   'pizza-veg': 'pizza',
   'pizza-nonveg': 'pizza',
-  burgers: 'burger',
-  sandwiches: 'sandwich',
-  wraps: 'wrap',
+  burger: 'burger',
+  sandwich: 'sandwich',
+  wrap: 'wrap',
   wings: 'wings',
-  fried: 'fries',
+  'fried-snacks': 'fries',
   'momos-maggie': 'momos',
-  'rice-noodles': 'rice',
+  'loaded-fries': 'fries',
+  noodles: 'maggie',
+  'fried-rice': 'rice',
   chinese: 'chinese',
   pasta: 'pasta',
   gravy: 'bread',
-  sizzlers: 'sizzler',
+  'chicken-stick': 'sizzler',
+  'chicken-sizzling': 'sizzler',
   snacks: 'snacks',
   hot: 'coldcoffee',
-  juices: 'juice',
+  juice: 'juice',
   lemon: 'juice',
   mojito: 'mojito',
   lassi: 'lassi',
   falooda: 'falooda',
   shakes: 'milkshake',
-  combos: 'combo',
-  'big-combos': 'combo',
+  combo: 'combo',
 };
 
 export const assetForCategory = (categoryId: string): string =>
   CATEGORY_ASSET[categoryId] ?? 'burger';
+
+/**
+ * Per-item overrides, for items whose category image would be misleading.
+ *
+ * Only a handful: a Maggi bowl under the "Momos & Maggie" category photo of momos is a small lie,
+ * and food photography is exactly where small lies get noticed.
+ */
+export const ITEM_ASSET_HINTS: Array<[match: RegExp, slug: string]> = [
+  [/maggie/i, 'maggie'],
+  [/momos/i, 'momos'],
+  [/fries|popcorn|nugget/i, 'fries'],
+  [/sizzling|stick/i, 'sizzler'],
+  [/coffee|tea/i, 'coldcoffee'],
+];
+
+/** Best asset for an item: name hint first, category fallback second. */
+export function assetForItem(name: string, categoryId: string): string {
+  for (const [pattern, slug] of ITEM_ASSET_HINTS) {
+    if (pattern.test(name)) return slug;
+  }
+  return assetForCategory(categoryId);
+}

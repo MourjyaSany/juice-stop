@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Money } from '@juice-stop/core';
 import { STATUS_COPY, orderProgress, toPaise, useOrders } from '@/store/orders';
-import { BagIcon, ChevronRightIcon } from '@/components/icons';
+import { BagIcon, ChevronLeftIcon, ChevronRightIcon } from '@/components/icons';
 import { Card, EmptyState, Skeleton, useHydrated } from '@/components/ui';
 
 export default function OrdersPage() {
@@ -20,10 +20,24 @@ export default function OrdersPage() {
   return (
     <main className="page-in relative min-h-dvh">
       <div className="pb-nav mx-auto w-full max-w-lg px-5 pt-6">
-        <h1 className="font-display text-3xl font-bold tracking-[-0.02em]">Orders</h1>
-        <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">
-          Live tracking and your history.
-        </p>
+        {/* Orders is reachable from the tab bar, but people also arrive here from a tracking
+            link — without a way back, that is a dead end. */}
+        <header className="flex items-center gap-3">
+          <Link
+            href="/"
+            aria-label="Back to home"
+            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px]"
+            style={{ background: 'var(--color-raised)', color: 'var(--color-text-secondary)' }}
+          >
+            <ChevronLeftIcon size={19} />
+          </Link>
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Orders</h1>
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Live tracking and your history.
+            </p>
+          </div>
+        </header>
 
         {!hydrated ? (
           <div className="mt-6 space-y-3">
