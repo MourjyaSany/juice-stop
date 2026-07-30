@@ -33,8 +33,13 @@ export function GeneratedImage({
   sizes?: string;
 }) {
   const asset = findAsset(slug);
-  const [failed, setFailed] = useState(false);
-  const showFallback = asset === undefined || failed;
+  // Try formats in quality order and fall through on 404. Different generators emit different
+  // formats (Higgsfield → webp, most free endpoints → jpg), and hardcoding one extension would
+  // mean re-touching every call site the day the source changes.
+  const [formatIndex, setFormatIndex] = useState(0);
+  const formats = ['webp', 'jpg', 'png'] as const;
+
+  const showFallback = asset === undefined || formatIndex >= formats.length;
 
   return (
     <span
@@ -64,12 +69,13 @@ export function GeneratedImage({
         // eslint-disable-next-line @next/next/no-img-element -- assets are pre-optimised local
         // webp; next/image adds a loader round-trip for no gain and breaks the onError fallback.
         <img
-          src={`/generated/${slug}.webp`}
+          key={formats[formatIndex]}
+          src={`/generated/${slug}.${formats[formatIndex]}`}
           alt={asset.alt}
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           {...(sizes !== undefined ? { sizes } : {})}
-          onError={() => setFailed(true)}
+          onError={() => setFormatIndex((i) => i + 1)}
           className="h-full w-full object-cover"
         />
       )}
