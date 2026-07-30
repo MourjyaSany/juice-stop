@@ -140,6 +140,8 @@ reasoning already in place.
 
 ## Licence
 
-None yet — **all rights reserved by default until one is added.** If you want others to legally
-use, modify or contribute to this, add a licence (MIT is the usual choice for this kind of
-project).
+[MIT](./LICENSE) — use it, fork it, ship it. Keep the copyright notice.
+
+Note that the licence covers the **code**. The generated imagery in
+`apps/web/public/generated/` is AI-produced; check the terms of whichever generator you use before
+relying on it commercially.
