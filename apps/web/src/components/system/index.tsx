@@ -10,6 +10,14 @@
 
 export { GeneratedImage } from './generated-image';
 export { AuroraField, ParticleField, GridVeil } from './atmosphere';
+export {
+  StickerField,
+  ColaCan,
+  PizzaBox,
+  GameController,
+  ChipsPacket,
+  CrescentMoon,
+} from './stickers';
 export { GlassPanel, GlowCard, AnimatedBorder, TactileButton } from './surfaces';
 export { ScrollReveal, ScrollStagger, useParallax } from './reveal';
 

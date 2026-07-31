@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { m, useReducedMotion } from 'motion/react';
 import { Money, MIN_ORDER_PAISE, type StoreStatus } from '@juice-stop/core';
-import { AuroraField, GridVeil, ParticleField, StatusPill } from '@/components/system';
+import { AuroraField, GridVeil, ParticleField, StatusPill, StickerField } from '@/components/system';
 import { CinematicStill } from './cinematic-still';
 import { ArrowRightIcon, ClockIcon, MapPinIcon } from '@/components/icons';
 import { SPRING } from '@/components/motion-provider';
@@ -37,6 +37,9 @@ export function Hero({ status }: { status: StoreStatus }) {
       <AuroraField />
       <GridVeil />
       <ParticleField count={20} />
+      {/* Low opacity and evenly spread — decoration that sits under the type, never competing
+          with the live status card, which is the one thing on this page that must be read. */}
+      <StickerField count={9} seed={5} opacity={0.15} />
 
       <div className="mx-auto w-full max-w-lg px-5">
         {/* ── Wordmark ─────────────────────────────────────────────────────────────────── */}

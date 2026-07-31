@@ -4,7 +4,8 @@ import { Hero } from '@/components/landing/hero';
 import { ActiveOrders } from '@/components/landing/active-orders';
 import { PopularTonight } from '@/components/landing/popular-tonight';
 import { TreasureMap } from '@/components/landing/treasure-map';
-import { ScrollReveal } from '@/components/system';
+import { Reviews } from '@/components/landing/reviews';
+import { ScrollReveal, StickerField } from '@/components/system';
 import { ArrowRightIcon } from '@/components/icons';
 
 // Store status changes minute to minute, so this page is never served stale.
@@ -59,7 +60,14 @@ export default function HomePage() {
 
       <PopularTonight />
 
-      <TreasureMap />
+      <Reviews />
+
+      {/* Stickers scattered behind the journey — seeded placement with a minimum-distance check,
+          so they stay evenly spread rather than clumping. */}
+      <div className="relative">
+        <StickerField count={11} seed={23} opacity={0.14} />
+        <TreasureMap />
+      </div>
 
       {/* ── Closing CTA ─────────────────────────────────────────────────────────────────── */}
       <section className="pb-nav relative mx-auto w-full max-w-lg px-5">

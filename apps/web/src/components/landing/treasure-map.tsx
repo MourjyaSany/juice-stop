@@ -77,8 +77,10 @@ function Checkpoint({
   return (
     <li ref={ref} className="relative">
       {/* Card — 64% width so the artwork is legible, offset to its side. */}
+      {/* z-10 keeps the card above the connector, so the trail passes cleanly *behind* the
+          artwork rather than crossing over it. */}
       <m.div
-        className={`relative w-[64%] ${side === 'left' ? 'mr-auto' : 'ml-auto'}`}
+        className={`relative z-10 w-[64%] ${side === 'left' ? 'mr-auto' : 'ml-auto'}`}
         initial={reduced ? false : { opacity: 0, x: side === 'left' ? -28 : 28, y: 12 }}
         animate={inView || reduced ? { opacity: 1, x: 0, y: 0 } : {}}
         transition={SPRING.smooth}
@@ -151,15 +153,21 @@ function Connector({
   const reduced = useReducedMotion();
 
   // Card centres sit at roughly 32% and 68%. The S-curve leaves one and arrives at the other.
+  //
+  // The path deliberately starts at y=-14 and ends at y=114, i.e. *past* both ends of its own
+  // box, and the box is pulled into the cards with negative margins. Stopping at the box edge
+  // left a visible gap between the trail and the artwork — the line has to run underneath the
+  // card corners for the route to read as continuous.
   const d =
     from === 'left'
-      ? 'M32,0 C32,34 68,58 68,100'
-      : 'M68,0 C68,34 32,58 32,100';
+      ? 'M32,-14 C32,32 68,60 68,114'
+      : 'M68,-14 C68,32 32,60 32,114';
 
   const gradientId = `trail-${from}`;
 
   return (
-    <div className="relative h-24 w-full" aria-hidden>
+    // Negative margins tuck the connector under the cards above and below it.
+    <div className="relative -mb-4 -mt-4 h-28 w-full" aria-hidden>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
