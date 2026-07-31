@@ -24,13 +24,35 @@ const AddressSchema = z.object({
   contactPhone: z.string().regex(/^[6-9]\d{9}$/, 'Enter a 10-digit Indian mobile number'),
 });
 
-const PlaceOrderSchema = z.object({
-  lines: z.array(LineSchema).min(1).max(30),
-  address: AddressSchema,
-  paymentMethod: z.enum(['UPI', 'CARD', 'COD']),
-  customerNote: z.string().max(140).optional(),
-  userId: z.string().optional(),
-});
+const PlaceOrderSchema = z
+  .object({
+    lines: z.array(LineSchema).min(1).max(30),
+    fulfilmentType: z.enum(['DELIVERY', 'TAKEAWAY']).default('DELIVERY'),
+    address: AddressSchema.optional(),
+    // Cash on delivery is gone. Every method here settles before the kitchen sees the ticket,
+    // which removes the entire cash-reconciliation surface along with it.
+    paymentMethod: z.enum(['UPI', 'CARD', 'NETBANKING', 'WALLET']),
+    customerNote: z.string().max(140).optional(),
+    userId: z.string().optional(),
+  })
+  // Address is required for delivery and rejected for takeaway. Enforced here rather than in the
+  // service so a malformed request never reaches the pricing path at all.
+  .superRefine((value, ctx) => {
+    if (value.fulfilmentType === 'DELIVERY' && value.address === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['address'],
+        message: 'A delivery address is required for delivery orders.',
+      });
+    }
+    if (value.fulfilmentType === 'TAKEAWAY' && value.address !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['address'],
+        message: 'Takeaway orders must not carry a delivery address.',
+      });
+    }
+  });
 
 const EditOrderSchema = z.object({ lines: z.array(LineSchema).min(1).max(30) });
 
@@ -46,7 +68,8 @@ export class OrderingController {
     const input = parsed.data;
     return this.ordering.placeOrder({
       lines: input.lines as OrderLineInput[],
-      address: input.address,
+      fulfilmentType: input.fulfilmentType,
+      ...(input.address !== undefined ? { address: input.address } : {}),
       paymentMethod: input.paymentMethod,
       ...(input.customerNote !== undefined ? { customerNote: input.customerNote } : {}),
       ...(input.userId !== undefined ? { userId: input.userId } : {}),

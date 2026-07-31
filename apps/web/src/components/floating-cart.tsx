@@ -30,11 +30,12 @@ const GAP_ABOVE_NAV = 88; // clears the bottom navigation
 export function FloatingCart({
   itemCount,
   subtotalPaise,
-  href = '/cart',
+  onOpen,
 }: {
   itemCount: number;
   subtotalPaise: Paise;
-  href?: string;
+  /** Opens the cart drawer. Reviewing a cart is a glance, not a navigation. */
+  onOpen: () => void;
 }) {
   const visible = itemCount > 0;
   const [pulse, setPulse] = useState(0);
@@ -70,9 +71,10 @@ export function FloatingCart({
               animate={{ scale: [1, 1.025, 1] }}
               transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
             >
-              <Link
-                href={href}
-                className="group relative flex items-center gap-3 overflow-hidden rounded-[16px] px-3.5 py-3"
+              <button
+                type="button"
+                onClick={onOpen}
+                className="group relative flex w-full items-center gap-3 overflow-hidden rounded-[16px] px-3.5 py-3 text-left"
                 style={{
                   height: BAR_HEIGHT,
                   background:
@@ -138,7 +140,7 @@ export function FloatingCart({
                     <ArrowRightIcon size={15} strokeWidth={2.4} />
                   </span>
                 </span>
-              </Link>
+              </button>
             </m.div>
           </m.div>
         )}

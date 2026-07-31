@@ -264,8 +264,15 @@ model Order {
   /// PLACED | ACCEPTED | PREPARING | READY | OUT_FOR_DELIVERY | DELIVERED | CANCELLED
   status      String   @default("PLACED")
 
-  /// Immutable copy of the address at placement.
-  addressJson String   @map("address_json")
+  /// DELIVERY | TAKEAWAY. Defaulted so the column is additive over existing rows.
+  fulfilmentType String @default("DELIVERY") @map("fulfilment_type")
+
+  /// Immutable copy of the address at placement. Null for takeaway — there is nowhere to deliver.
+  addressJson String?  @map("address_json")
+
+  /// Short collection code for takeaway, shown to the customer and quoted at the counter.
+  /// Server-generated: a client-minted token proves nothing, exactly like the delivery OTP.
+  pickupToken String?  @map("pickup_token")
 
   subtotalPaise    BigInt @map("subtotal_paise")
   deliveryFeePaise BigInt @default(0) @map("delivery_fee_paise")

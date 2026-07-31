@@ -1,25 +1,27 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as loadEnv } from 'dotenv';
+import { CATEGORIES, ITEMS } from '@juice-stop/menu';
 import { PrismaClient } from '../../generated/client/index.js';
-import { SEED_CATEGORIES, SEED_ITEMS, type SeedItem } from './menu-source.js';
+
+/**
+ * Database seed.
+ *
+ * The catalogue comes from `@juice-stop/menu` — the **same module the storefront renders from**.
+ * It used to be transcribed twice, which meant a price corrected in one copy silently disagreed
+ * with the other: the storefront showing one number while the API and kitchen board served
+ * another. Importing the canonical data makes that class of bug unrepresentable.
+ */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: path.resolve(here, '../../../../.env'), quiet: true });
 
 const prisma = new PrismaClient();
 
-/** Rupees → integer paise. The only place a rupee number is allowed (ADR-003). */
-const paise = (rupees: number): bigint => BigInt(Math.round(rupees * 100));
-
-/** Stable, readable ids — `pizza-veg:margherita`. Re-seeding is then idempotent. */
-const slug = (s: string) =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
 async function main() {
   console.log('Seeding Juice Stop…');
 
-  // Idempotent from the leaves up — foreign keys forbid the reverse order.
+  // Idempotent, leaves first — foreign keys forbid the reverse order.
   await prisma.orderStatusEvent.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
@@ -42,7 +44,6 @@ async function main() {
     },
   });
 
-  // ── Settings ────────────────────────────────────────────────────────────────────────────────
   await prisma.setting.createMany({
     data: [
       { key: 'store.open_time', value: '"19:00"', description: 'Service opens (IST)' },
@@ -56,16 +57,12 @@ async function main() {
       { key: 'capacity.pause_threshold', value: '1.0', description: 'Stop accepting new orders' },
       { key: 'orders.edit_window_ms', value: '600000', description: '10-minute customer grace window' },
       { key: 'delivery.complex', value: '"Abode Valley Complex"', description: 'The only area served' },
+      { key: 'fulfilment.takeaway_enabled', value: 'true', description: 'Offer pickup as well as delivery' },
     ],
   });
 
-  // ── Catalog ─────────────────────────────────────────────────────────────────────────────────
-  let categoryOrder = 0;
-  let totalItems = 0;
-  let totalVariants = 0;
-  let totalAddOns = 0;
-
-  for (const category of SEED_CATEGORIES) {
+  // ── Catalogue, straight from the canonical module ──────────────────────────────────────────
+  for (const [order, category] of CATEGORIES.entries()) {
     await prisma.category.create({
       data: {
         id: category.id,
@@ -74,78 +71,65 @@ async function main() {
         name: category.name,
         emoji: category.emoji,
         note: category.note ?? null,
-        sortOrder: categoryOrder++,
+        sortOrder: order,
+      },
+    });
+  }
+
+  let variantCount = 0;
+  let addOnCount = 0;
+
+  for (const [order, item] of ITEMS.entries()) {
+    await prisma.product.create({
+      data: {
+        id: item.id,
+        outletId: outlet.id,
+        categoryId: item.categoryId,
+        name: item.name,
+        description: item.description ?? null,
+        isVeg: item.isVeg,
+        prepTimeSeconds: item.prepTimeSeconds,
+        tagsJson: JSON.stringify(item.tags),
+        inStock: item.inStock,
+        sortOrder: order,
       },
     });
 
-    const items: SeedItem[] = SEED_ITEMS[category.id] ?? [];
-    let itemOrder = 0;
-
-    for (const [name, price, opts = {}] of items) {
-      const productId = `${category.id}:${slug(name)}`;
-      const sizes = Array.isArray(price) ? price : ([['Regular', price]] as Array<[string, number]>);
-
-      await prisma.product.create({
+    for (const [i, variant] of item.variants.entries()) {
+      await prisma.productVariant.create({
         data: {
-          id: productId,
-          outletId: outlet.id,
-          categoryId: category.id,
-          name,
-          description: opts.desc ?? null,
-          isVeg: opts.veg ?? false,
-          prepTimeSeconds: opts.prep ?? (Array.isArray(price) ? 720 : 420),
-          tagsJson: JSON.stringify(opts.tags ?? []),
-          sortOrder: itemOrder++,
+          id: variant.id,
+          productId: item.id,
+          name: variant.name,
+          pricePaise: variant.pricePaise,
+          sortOrder: i,
         },
       });
-      totalItems++;
+      variantCount++;
+    }
 
-      const variantIds: string[] = [];
-      for (const [index, [label, amount]] of sizes.entries()) {
-        const variantId = `${productId}#${index}`;
-        variantIds.push(variantId);
-        await prisma.productVariant.create({
-          data: {
-            id: variantId,
-            productId,
-            name: label,
-            pricePaise: paise(amount),
-            sortOrder: index,
-          },
-        });
-        totalVariants++;
-      }
-
-      // Extra cheese: flat on wraps, size-dependent on pizza (₹40 / ₹60 / ₹70).
-      if (opts.cheese === 'pizza') {
-        await prisma.productAddOn.create({
-          data: {
-            id: `${productId}#cheese`,
-            productId,
-            name: 'Extra Cheese',
-            priceByVariantJson: JSON.stringify({
-              [variantIds[0]!]: paise(40).toString(),
-              [variantIds[1]!]: paise(60).toString(),
-              [variantIds[2]!]: paise(70).toString(),
-            }),
-          },
-        });
-        totalAddOns++;
-      } else if (typeof opts.cheese === 'number') {
-        await prisma.productAddOn.create({
-          data: {
-            id: `${productId}#cheese`,
-            productId,
-            name: 'Extra Cheese',
-            pricePaise: paise(opts.cheese),
-          },
-        });
-        totalAddOns++;
-      }
+    for (const addOn of item.addOns) {
+      await prisma.productAddOn.create({
+        data: {
+          id: addOn.id,
+          productId: item.id,
+          name: addOn.name,
+          pricePaise: addOn.pricePaise ?? null,
+          // SQLite has no JSON column; paise are stringified to stay exact through the round trip.
+          priceByVariantJson:
+            addOn.priceByVariantId !== undefined
+              ? JSON.stringify(
+                  Object.fromEntries(
+                    Object.entries(addOn.priceByVariantId).map(([k, v]) => [k, v.toString()]),
+                  ),
+                )
+              : null,
+        },
+      });
+      addOnCount++;
     }
   }
 
-  // ── A demo customer, so the app has something to show ───────────────────────────────────────
   const customer = await prisma.user.create({
     data: {
       id: 'user-demo',
@@ -170,12 +154,11 @@ async function main() {
     },
   });
 
-  console.log(`  outlet      : ${outlet.name}`);
-  console.log(`  categories  : ${SEED_CATEGORIES.length}`);
-  console.log(`  products    : ${totalItems}`);
-  console.log(`  variants    : ${totalVariants}`);
-  console.log(`  add-ons     : ${totalAddOns}`);
-  console.log('Done.');
+  console.log(`  categories : ${CATEGORIES.length}`);
+  console.log(`  products   : ${ITEMS.length}`);
+  console.log(`  variants   : ${variantCount}`);
+  console.log(`  add-ons    : ${addOnCount}`);
+  console.log('Done — seeded from @juice-stop/menu, the same source the storefront renders.');
 }
 
 main()

@@ -61,6 +61,23 @@ export interface OrderAddressSnapshot {
   contactPhone: string;
 }
 
+export type FulfilmentType = 'DELIVERY' | 'TAKEAWAY';
+
+/**
+ * Cash on delivery is deliberately absent. Every method settles before the kitchen sees the
+ * ticket, which removes the entire cash-reconciliation surface with it.
+ */
+export type PaymentMethod = 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET';
+
+export const PAYMENT_METHODS: Array<{ id: PaymentMethod; label: string; note: string }> = [
+  // UPI first and default: zero MDR by regulation in India versus ~2% on cards, which makes this
+  // one default worth more to the margin than most engineering in this repo.
+  { id: 'UPI', label: 'UPI', note: 'GPay · PhonePe · Paytm' },
+  { id: 'CARD', label: 'Card', note: 'Debit or credit' },
+  { id: 'NETBANKING', label: 'Net banking', note: 'All major banks' },
+  { id: 'WALLET', label: 'Wallet', note: 'Paytm · Amazon Pay' },
+];
+
 export interface OrderTotalsSnapshot {
   subtotalPaiseStr: string;
   deliveryFeePaiseStr: string;
@@ -77,8 +94,12 @@ export interface PlacedOrder extends OrderTotalsSnapshot {
   /** Cart lines the order was built from — the basis for editing. */
   sourceLines: CartLine[];
   lines: OrderLineSnapshot[];
-  address: OrderAddressSnapshot;
-  paymentMethod: 'UPI' | 'CARD' | 'COD';
+  fulfilmentType: FulfilmentType;
+  /** Null for takeaway — there is nowhere to deliver. */
+  address: OrderAddressSnapshot | null;
+  /** Collection code, takeaway only. Server-generated in production. */
+  pickupToken: string | null;
+  paymentMethod: PaymentMethod;
   /** Honest ETA — we grade ourselves against this (ADR-013). */
   promisedAt: number;
   prepSeconds: number;
@@ -95,7 +116,9 @@ export interface PlacedOrder extends OrderTotalsSnapshot {
 
 interface OrdersState {
   orders: PlacedOrder[];
-  place: (order: Omit<PlacedOrder, 'id' | 'orderNumber' | 'otp' | 'editCount'>) => PlacedOrder;
+  place: (
+    order: Omit<PlacedOrder, 'id' | 'orderNumber' | 'otp' | 'editCount' | 'pickupToken'>,
+  ) => PlacedOrder;
   /** Apply an edit made during the grace window. Rejected once the window has shut. */
   applyEdit: (
     orderId: string,
@@ -107,6 +130,24 @@ interface OrdersState {
   /** Close the window early — "I'm sure, start cooking". */
   confirmNow: (orderId: string) => void;
   clear: () => void;
+}
+
+/**
+ * Collection code, e.g. `JS-4KQ9`.
+ *
+ * Mirrors the server's generator. The alphabet omits I, O, 0, 1, S and 5 — a code read aloud
+ * across a busy counter must not hinge on whether that was a zero or an O.
+ *
+ * Generated client-side only because the storefront does not place orders through the API yet;
+ * the server mints the authoritative one, since a client-generated code proves nothing.
+ */
+function mintPickupToken(): string {
+  const alphabet = '23456789ABCDEFGHJKLMNPQRTUVWXYZ';
+  let token = '';
+  for (let i = 0; i < 4; i++) {
+    token += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return `JS-${token}`;
 }
 
 /** JS-270726-0417 — readable, sortable, and it does not leak nightly order volume. */
@@ -131,6 +172,7 @@ export const useOrders = create<OrdersState>()(
           // 4-digit delivery OTP. Plain here only because there is no server yet; in production
           // only a sha256 hash is stored and the rider verifies against it offline.
           otp: String(Math.floor(Math.random() * 9000 + 1000)),
+          pickupToken: draft.fulfilmentType === 'TAKEAWAY' ? mintPickupToken() : null,
           editCount: 0,
         };
         set((s) => ({ orders: [placed, ...s.orders] }));
@@ -258,12 +300,23 @@ export function orderProgress(order: PlacedOrder, now = Date.now()): OrderProgre
 
 export const STATUS_COPY: Record<OrderStatus, { label: string; line: string }> = {
   PLACED: { label: 'Order secured', line: "Kitchen's got it." },
-  ACCEPTED: { label: 'Order confirmed', line: 'You can still make changes.' },
-  PREPARING: { label: 'Cooking', line: 'Chef is absolutely cooking.' },
+  ACCEPTED: { label: 'Kitchen is locked in', line: 'You can still make changes.' },
+  PREPARING: { label: 'Cooking', line: 'Fresh off the grill.' },
   READY: { label: 'Ready', line: 'Packed and waiting for a rider.' },
-  OUT_FOR_DELIVERY: { label: 'Out for delivery', line: 'Driver has entered the grind.' },
-  DELIVERED: { label: 'Delivered', line: 'Late night cravings successfully defeated.' },
+  OUT_FOR_DELIVERY: { label: 'On the way', line: 'Night fuel incoming.' },
+  DELIVERED: { label: 'Delivered', line: 'Worth staying awake for.' },
 };
+
+/** Takeaway runs the same state machine, but "out for delivery" would be a lie. */
+export const TAKEAWAY_STATUS_COPY: Record<OrderStatus, { label: string; line: string }> = {
+  ...STATUS_COPY,
+  READY: { label: 'Ready for pickup', line: 'Come grab it — quote your code at the counter.' },
+  OUT_FOR_DELIVERY: { label: 'Waiting at the counter', line: 'Packed and holding for you.' },
+  DELIVERED: { label: 'Collected', line: 'Mission accomplished.' },
+};
+
+export const statusCopyFor = (fulfilment: FulfilmentType) =>
+  fulfilment === 'TAKEAWAY' ? TAKEAWAY_STATUS_COPY : STATUS_COPY;
 
 /** Parse a persisted paise string back into branded money. */
 export const toPaise = (s: string): Paise => Money.paise(BigInt(s));

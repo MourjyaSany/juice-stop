@@ -21,20 +21,34 @@ export interface OrderLineInput {
   note?: string;
 }
 
+/**
+ * Cash on delivery is deliberately absent.
+ *
+ * Removing it also removes the entire cash-reconciliation surface — per-rider drawers, variance
+ * tracking, COD risk caps. Every method below settles before the kitchen ever sees the ticket.
+ */
+export type PaymentMethod = 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET';
+
+export type FulfilmentType = 'DELIVERY' | 'TAKEAWAY';
+
+export interface DeliveryAddressInput {
+  label: string;
+  block: string;
+  flatOrRoom: string;
+  // Explicit `| undefined`: exactOptionalPropertyTypes separates "absent" from "present and
+  // undefined", and Zod's `.optional()` produces the latter.
+  floor?: string | undefined;
+  landmark?: string | undefined;
+  contactName: string;
+  contactPhone: string;
+}
+
 export interface PlaceOrderInput {
   lines: OrderLineInput[];
-  address: {
-    label: string;
-    block: string;
-    flatOrRoom: string;
-    // Explicit `| undefined`: exactOptionalPropertyTypes separates "absent" from "present and
-    // undefined", and Zod's `.optional()` produces the latter.
-    floor?: string | undefined;
-    landmark?: string | undefined;
-    contactName: string;
-    contactPhone: string;
-  };
-  paymentMethod: 'UPI' | 'CARD' | 'COD';
+  fulfilmentType: FulfilmentType;
+  /** Required for DELIVERY, absent for TAKEAWAY. Enforced by the controller schema. */
+  address?: DeliveryAddressInput | undefined;
+  paymentMethod: PaymentMethod;
   customerNote?: string;
   userId?: string;
 }
@@ -160,14 +174,27 @@ export class OrderingService {
       );
     }
 
+    const takeaway = input.fulfilmentType === 'TAKEAWAY';
+
+    if (!takeaway && input.address === undefined) {
+      throw new ValidationError('A delivery address is required for delivery orders.');
+    }
+
     const now = new Date();
     const editableUntil = new Date(now.getTime() + EDIT_WINDOW_MS);
-    // Cooking starts when the order stops being changeable, so the promise is honest rather
-    // than optimistic by exactly the length of the edit window.
-    const etaSeconds = Math.round((totals.prepSeconds + 120 + 7 * 60) * 1.2);
+
+    // Cooking starts when the order stops being changeable, so the promise is honest rather than
+    // optimistic by exactly the length of the edit window. Takeaway skips travel entirely — the
+    // customer is the courier — which is the whole reason it arrives sooner.
+    const travelSeconds = takeaway ? 0 : 7 * 60;
+    const etaSeconds = Math.round((totals.prepSeconds + 120 + travelSeconds) * 1.2);
     const promisedAt = new Date(editableUntil.getTime() + etaSeconds * 1000);
 
     const otp = String(randomInt(1000, 10_000));
+    // Server-minted: a client-generated collection code proves nothing at the counter, exactly
+    // like the delivery OTP. Ambiguous characters are excluded so it can be read aloud over a
+    // noisy counter without "is that a zero or an O?".
+    const pickupToken = takeaway ? mintPickupToken() : null;
 
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
@@ -177,14 +204,17 @@ export class OrderingService {
           businessDate: toBusinessDate(now),
           userId: input.userId ?? null,
           status: 'PLACED',
-          addressJson: JSON.stringify(input.address),
+          fulfilmentType: input.fulfilmentType,
+          addressJson: takeaway ? null : JSON.stringify(input.address),
+          pickupToken,
           subtotalPaise: totals.subtotalPaise,
           deliveryFeePaise: totals.deliveryFeePaise,
           handlingFeePaise: totals.handlingFeePaise,
           taxPaise: totals.taxPaise,
           totalPaise: totals.totalPaise,
           paymentMethod: input.paymentMethod,
-          paymentStatus: input.paymentMethod === 'COD' ? 'PENDING' : 'PAID',
+          // With cash removed, every order is settled before the kitchen sees it.
+          paymentStatus: 'PAID',
           placedAt: now,
           editableUntil,
           promisedAt,
@@ -224,7 +254,8 @@ export class OrderingService {
       return created;
     });
 
-    return { order: serialiseOrder(order), otp };
+    // OTP and pickup token are returned once, here, and never stored in plaintext or re-served.
+    return { order: serialiseOrder(order), otp, pickupToken };
   }
 
   /** Apply an edit inside the grace window. */
@@ -379,6 +410,19 @@ export class OrderingService {
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 
+/**
+ * Six-character collection code, e.g. `JS-4KQ9`.
+ *
+ * The alphabet omits I, O, 0, 1, S and 5 — a code read aloud across a busy counter must not
+ * hinge on whether that was a zero or an O. Same reasoning as the block letters we skip.
+ */
+function mintPickupToken(): string {
+  const alphabet = '23456789ABCDEFGHJKLMNPQRTUVWXYZ';
+  let token = '';
+  for (let i = 0; i < 4; i++) token += alphabet[randomInt(0, alphabet.length)];
+  return `JS-${token}`;
+}
+
 function makeOrderNumber(at: Date): string {
   const dd = String(at.getDate()).padStart(2, '0');
   const mm = String(at.getMonth() + 1).padStart(2, '0');
@@ -392,7 +436,9 @@ function serialiseOrder(order: {
   orderNumber: string;
   businessDate: string;
   status: string;
-  addressJson: string;
+  fulfilmentType: string;
+  addressJson: string | null;
+  pickupToken: string | null;
   subtotalPaise: bigint;
   deliveryFeePaise: bigint;
   handlingFeePaise: bigint;
@@ -421,7 +467,14 @@ function serialiseOrder(order: {
     orderNumber: order.orderNumber,
     businessDate: order.businessDate,
     status: order.status,
-    address: JSON.parse(order.addressJson) as Record<string, string>,
+    fulfilmentType: order.fulfilmentType,
+    // Null for takeaway — there is no address, and emitting an empty object would make every
+    // consumer guess whether the delivery details simply failed to load.
+    address:
+      order.addressJson !== null
+        ? (JSON.parse(order.addressJson) as Record<string, string>)
+        : null,
+    pickupToken: order.pickupToken,
     subtotalPaise: order.subtotalPaise.toString(),
     deliveryFeePaise: order.deliveryFeePaise.toString(),
     handlingFeePaise: order.handlingFeePaise.toString(),

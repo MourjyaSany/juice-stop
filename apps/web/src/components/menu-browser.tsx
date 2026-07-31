@@ -17,6 +17,7 @@ import { priceCart, useCart } from '@/store/cart';
 import { assetForItem } from '@/data/assets';
 import { ItemSheet } from './item-sheet';
 import { FloatingCart } from './floating-cart';
+import { CartDrawer } from './cart-drawer';
 import { QuantityStepper } from './quantity-stepper';
 import { GeneratedImage } from './system/generated-image';
 import { CheckIcon, DietMark, SearchIcon } from './icons';
@@ -34,6 +35,7 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
   const [query, setQuery] = useState('');
   const [vegOnly, setVegOnly] = useState(false);
   const [sheetItem, setSheetItem] = useState<MenuItem | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
 
   const searching = query.trim().length > 0;
   const categories = useMemo(() => CATEGORIES.filter((c) => c.groupId === groupId), [groupId]);
@@ -230,8 +232,14 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
       <ItemSheet item={sheetItem} open={sheetItem !== null} onClose={() => setSheetItem(null)} />
 
       {hydrated && (
-        <FloatingCart itemCount={totals.itemCount} subtotalPaise={totals.subtotalPaise} />
+        <FloatingCart
+          itemCount={totals.itemCount}
+          subtotalPaise={totals.subtotalPaise}
+          onOpen={() => setCartOpen(true)}
+        />
       )}
+
+      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
     </div>
   );
 }

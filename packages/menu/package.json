@@ -1,0 +1,29 @@
+{
+  "name": "@juice-stop/menu",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The canonical Juice Stop catalogue — one source of truth for the storefront and the database seed.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "clean": "rimraf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@juice-stop/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@juice-stop/config": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

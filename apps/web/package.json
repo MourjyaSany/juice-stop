@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@juice-stop/core": "workspace:*",
+    "@juice-stop/menu": "workspace:*",
     "motion": "^11.15.0",
     "next": "^15.1.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.0"
@@ -23,6 +25,7 @@
     "@juice-stop/config": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "postcss": "^8.4.49",

@@ -34,12 +34,19 @@ export function snapshotTotals(totals: CartTotals): OrderTotalsSnapshot {
  * Honest ETA.
  *
  * Kitchen prep is the **max** across the cart, not the sum — a kitchen cooks in parallel, and
- * summing would quote 40 minutes for four items that finish together. Then packing, then travel
- * inside the complex, all stretched by how busy the kitchen currently is (ADR-013).
+ * summing would quote 40 minutes for four items that finish together. Then packing, then travel,
+ * all stretched by how busy the kitchen currently is (ADR-013).
+ *
+ * Takeaway skips travel entirely: the customer is the courier. That is the real reason pickup is
+ * faster, and quoting the same number for both would make one of them a lie.
  */
-export function estimateEtaSeconds(prepSeconds: number, capacityLoad: number): number {
+export function estimateEtaSeconds(
+  prepSeconds: number,
+  capacityLoad: number,
+  fulfilment: 'DELIVERY' | 'TAKEAWAY' = 'DELIVERY',
+): number {
   const PACKING = 120;
-  const TRAVEL_IN_COMPLEX = 7 * 60;
+  const TRAVEL_IN_COMPLEX = fulfilment === 'TAKEAWAY' ? 0 : 7 * 60;
   const loadFactor = 1 + capacityLoad * 0.6;
   return Math.round((prepSeconds + PACKING + TRAVEL_IN_COMPLEX) * loadFactor);
 }

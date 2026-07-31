@@ -3,25 +3,32 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { AnimatePresence, m } from 'motion/react';
 import { getStoreStatus, Money, toBusinessDate } from '@juice-stop/core';
 import { priceCart, useCart } from '@/store/cart';
-import { EDIT_WINDOW_MS, useOrders } from '@/store/orders';
+import {
+  EDIT_WINDOW_MS,
+  PAYMENT_METHODS,
+  useOrders,
+  type FulfilmentType,
+  type PaymentMethod,
+} from '@/store/orders';
 import { checkProfileReadiness, useProfile } from '@/store/profile';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { estimateEtaSeconds, snapshotLines, snapshotTotals } from '@/lib/order-builder';
-import { CheckIcon, ChevronLeftIcon, MapPinIcon, UserIcon } from '@/components/icons';
+import { FulfilmentToggle } from '@/components/checkout/fulfilment-toggle';
 import { BillSummary } from '@/components/bill-summary';
-import { Button, Card, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
-
-type PaymentMethod = 'UPI' | 'CARD' | 'COD';
-
-const METHODS: Array<{ id: PaymentMethod; label: string; note: string }> = [
-  // UPI first and default: zero MDR by regulation in India, versus ~2% on cards. Every order
-  // moved to UPI is straight margin (09-deployment.md §4).
-  { id: 'UPI', label: 'UPI', note: 'GPay · PhonePe · Paytm' },
-  { id: 'CARD', label: 'Card', note: 'Debit or credit' },
-  { id: 'COD', label: 'Cash on delivery', note: 'Pay the rider' },
-];
+import { AnimatedPaise } from '@/components/animated-value';
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ClockIcon,
+  MapPinIcon,
+  UserIcon,
+} from '@/components/icons';
+import { Eyebrow, GlassPanel, TactileButton } from '@/components/system';
+import { Skeleton, useHydrated } from '@/components/ui';
+import { SPRING } from '@/components/motion-provider';
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -35,31 +42,41 @@ export default function CheckoutPage() {
   const status = getStoreStatus();
   const readiness = checkProfileReadiness(profile);
 
+  const [fulfilment, setFulfilment] = useState<FulfilmentType>('DELIVERY');
   const [addressId, setAddressId] = useState<string | null>(null);
   const [method, setMethod] = useState<PaymentMethod>('UPI');
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
 
+  const takeaway = fulfilment === 'TAKEAWAY';
   const selectedAddress =
     profile.addresses.find((a) => a.id === addressId) ?? readiness.defaultAddress;
 
+  const deliveryMinutes = Math.round(
+    estimateEtaSeconds(totals.prepSeconds, status.capacityLoad, 'DELIVERY') / 60,
+  );
+  const takeawayMinutes = Math.round(
+    estimateEtaSeconds(totals.prepSeconds, status.capacityLoad, 'TAKEAWAY') / 60,
+  );
+
+  // Takeaway needs a name and phone but no address — so the profile gate is narrower.
+  const identityReady =
+    profile.fullName.trim().length >= 2 && /^[6-9]\d{9}$/.test(profile.phone.replace(/\D/g, ''));
+  const profileOk = takeaway ? identityReady : readiness.ready;
+
   const blocked =
-    !readiness.ready ||
-    selectedAddress === null ||
+    !profileOk ||
+    (!takeaway && selectedAddress === null) ||
     totals.itemCount === 0 ||
     !totals.meetsMinimum ||
     !status.acceptingOrders;
 
   const placeOrder = () => {
-    if (blocked || selectedAddress === null || placing) return;
+    if (blocked || placing) return;
     setPlacing(true);
 
     const placedAt = Date.now();
-    const etaSeconds = estimateEtaSeconds(totals.prepSeconds, status.capacityLoad);
-
-    // The edit window runs in parallel with the kitchen queue, and the promise accounts for it:
-    // cooking starts when the order stops being changeable. Quoting from `placedAt` instead
-    // would guarantee every order arrives late by exactly the window length.
+    const etaSeconds = estimateEtaSeconds(totals.prepSeconds, status.capacityLoad, fulfilment);
     const editableUntil = placedAt + EDIT_WINDOW_MS;
 
     const order = place({
@@ -68,26 +85,28 @@ export default function CheckoutPage() {
       editableUntil,
       promisedAt: editableUntil + etaSeconds * 1000,
       prepSeconds: totals.prepSeconds,
+      fulfilmentType: fulfilment,
       paymentMethod: method,
       customerNote: note.trim(),
       sourceLines: lines,
-      // Prices are snapshotted here (ADR-011): a menu edit at 01:00 must never retroactively
-      // change an order that has already been placed and paid for.
       lines: snapshotLines(totals),
-      address: {
-        label: selectedAddress.label,
-        block: selectedAddress.block,
-        flatOrRoom: selectedAddress.flatOrRoom,
-        floor: selectedAddress.floor,
-        landmark: selectedAddress.landmark,
-        contactName: selectedAddress.contactName,
-        contactPhone: selectedAddress.contactPhone,
-      },
+      address:
+        takeaway || selectedAddress === null
+          ? null
+          : {
+              label: selectedAddress.label,
+              block: selectedAddress.block,
+              flatOrRoom: selectedAddress.flatOrRoom,
+              floor: selectedAddress.floor,
+              landmark: selectedAddress.landmark,
+              contactName: selectedAddress.contactName,
+              contactPhone: selectedAddress.contactPhone,
+            },
       ...snapshotTotals(totals),
     });
 
     clearCart();
-    router.push(`/orders/${order.id}`);
+    router.push(`/orders/${order.id}/confirmation`);
   };
 
   if (!hydrated) {
@@ -95,7 +114,7 @@ export default function CheckoutPage() {
       <main className="min-h-dvh">
         <div className="pb-nav mx-auto w-full max-w-lg space-y-3 px-5 pt-6">
           <Skeleton className="h-10 w-40 rounded-[12px]" />
-          <Skeleton className="h-32 w-full rounded-[18px]" />
+          <Skeleton className="h-20 w-full rounded-[18px]" />
           <Skeleton className="h-48 w-full rounded-[18px]" />
         </div>
       </main>
@@ -117,9 +136,22 @@ export default function CheckoutPage() {
           <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Checkout</h1>
         </header>
 
-        {/* ① Profile gate — named gaps, with a direct route to fix them. */}
-        {!readiness.ready && (
-          <Card className="mt-5 p-4" style={{ borderColor: 'rgb(255 107 26 / 0.3)' }}>
+        {/* ── How you want it ──────────────────────────────────────────────────────────────── */}
+        <section className="mt-7">
+          <Eyebrow tone="warm">How you want it</Eyebrow>
+          <div className="mt-3">
+            <FulfilmentToggle
+              value={fulfilment}
+              onChange={setFulfilment}
+              deliveryMinutes={deliveryMinutes}
+              takeawayMinutes={takeawayMinutes}
+            />
+          </div>
+        </section>
+
+        {/* ── Profile gate ─────────────────────────────────────────────────────────────────── */}
+        {!profileOk && (
+          <GlassPanel className="mt-5 p-4" style={{ borderColor: 'rgb(255 107 26 / 0.3)' }}>
             <div className="flex items-start gap-3">
               <span
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
@@ -128,88 +160,166 @@ export default function CheckoutPage() {
                 <UserIcon size={18} />
               </span>
               <div className="min-w-0">
-                <p className="font-display text-sm font-semibold">Finish your profile first</p>
-                <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-                  We still need {readiness.missing.join(', ')}.
+                <p className="font-display text-sm font-bold">Finish your profile first</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+                  We still need{' '}
+                  {takeaway
+                    ? 'your name and a valid phone number'
+                    : readiness.missing.join(', ')}
+                  .
                 </p>
                 <Link
                   href="/profile"
-                  className="mt-3 inline-flex h-9 items-center rounded-[10px] px-4 text-xs font-semibold text-white"
+                  className="mt-3 inline-flex h-9 items-center rounded-[10px] px-4 text-xs font-bold text-white"
                   style={{ background: 'var(--gradient-brand)' }}
                 >
                   Go to profile
                 </Link>
               </div>
             </div>
-          </Card>
+          </GlassPanel>
         )}
 
-        {/* ② Address */}
-        {profile.addresses.length > 0 && (
-          <section className="mt-7">
-            <SectionLabel>Deliver to</SectionLabel>
-            <div className="mt-3 space-y-2.5">
-              {profile.addresses.map((a) => {
-                const active = (selectedAddress?.id ?? '') === a.id;
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => setAddressId(a.id)}
-                    aria-pressed={active}
-                    className="pressable glass flex w-full items-start gap-3 rounded-[16px] p-3.5 text-left"
-                    style={{ borderColor: active ? 'var(--color-orange-500)' : undefined }}
-                  >
-                    <span
-                      aria-hidden
-                      className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
-                      style={{
-                        borderColor: active ? 'var(--color-orange-500)' : 'var(--color-border-strong)',
-                      }}
-                    >
-                      {active && (
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ background: 'var(--color-orange-500)' }}
-                        />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-display text-sm font-semibold">{a.label}</span>
-                      <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">
-                        {a.flatOrRoom}
-                        {a.floor.length > 0 && `, Floor ${a.floor}`} · {blockLabel(a.block)}
-                        <br />
-                        {COMPLEX_NAME}
-                        {a.landmark.length > 0 && ` · ${a.landmark}`}
-                      </span>
-                      <span className="mt-1 block text-xs text-[var(--color-text-tertiary)]">
-                        {a.contactName} · {a.contactPhone}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <Link
-              href="/profile"
-              className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-[var(--color-purple-300)]"
+        {/* ── Where ────────────────────────────────────────────────────────────────────────── */}
+        <AnimatePresence mode="wait" initial={false}>
+          {takeaway ? (
+            <m.section
+              key="pickup"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={SPRING.smooth}
+              className="mt-7"
             >
-              <MapPinIcon size={13} />
-              Manage addresses
-            </Link>
-          </section>
-        )}
+              <Eyebrow tone="violet">Collection</Eyebrow>
+              <GlassPanel className="mt-3 p-4">
+                <div className="flex items-start gap-3">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                    style={{ background: 'rgb(168 85 247 / 0.16)', color: 'var(--color-purple-300)' }}
+                  >
+                    <MapPinIcon size={17} />
+                  </span>
+                  <div className="min-w-0 text-sm">
+                    <p className="font-display font-bold">Juice Stop counter</p>
+                    <p className="mt-0.5 leading-relaxed text-[var(--color-text-secondary)]">
+                      {COMPLEX_NAME}, Kattankulathur
+                    </p>
+                    <ul className="mt-3 space-y-1.5 text-xs text-[var(--color-text-secondary)]">
+                      <li className="flex gap-2">
+                        <span style={{ color: 'var(--color-orange-500)' }}>1.</span>
+                        We&apos;ll give you a collection code the moment you order.
+                      </li>
+                      <li className="flex gap-2">
+                        <span style={{ color: 'var(--color-orange-500)' }}>2.</span>
+                        Wait for &ldquo;Ready for pickup&rdquo; — the app counts it down.
+                      </li>
+                      <li className="flex gap-2">
+                        <span style={{ color: 'var(--color-orange-500)' }}>3.</span>
+                        Show the code or QR at the counter. That&apos;s it.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </GlassPanel>
+              <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-[var(--color-success)]">
+                <CheckIcon size={13} strokeWidth={2.6} />
+                No delivery wait — roughly {deliveryMinutes - takeawayMinutes} minutes faster.
+              </p>
+            </m.section>
+          ) : (
+            profile.addresses.length > 0 && (
+              <m.section
+                key="address"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={SPRING.smooth}
+                className="mt-7"
+              >
+                <Eyebrow tone="warm">Deliver to</Eyebrow>
+                <div className="mt-3 space-y-2.5">
+                  {profile.addresses.map((a) => {
+                    const active = (selectedAddress?.id ?? '') === a.id;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setAddressId(a.id)}
+                        aria-pressed={active}
+                        className="pressable flex w-full items-start gap-3 rounded-[16px] p-3.5 text-left transition-colors duration-200"
+                        style={{
+                          background: active
+                            ? 'linear-gradient(140deg, rgb(255 107 26 / 0.10), rgb(168 85 247 / 0.07))'
+                            : 'var(--color-inset)',
+                          border: `1px solid ${active ? 'rgb(255 107 26 / 0.35)' : 'var(--color-border-subtle)'}`,
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
+                          style={{
+                            borderColor: active
+                              ? 'var(--color-orange-500)'
+                              : 'var(--color-border-strong)',
+                          }}
+                        >
+                          {active && (
+                            <span
+                              className="h-2 w-2 rounded-full"
+                              style={{ background: 'var(--color-orange-500)' }}
+                            />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="font-display text-sm font-bold">{a.label}</span>
+                            <span
+                              className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                              style={{
+                                background: 'rgb(255 107 26 / 0.16)',
+                                color: 'var(--color-orange-500)',
+                              }}
+                            >
+                              {blockLabel(a.block)}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block text-xs leading-relaxed text-[var(--color-text-secondary)]">
+                            {a.flatOrRoom}
+                            {a.floor.length > 0 && `, Floor ${a.floor}`} · {COMPLEX_NAME}
+                          </span>
+                          <span className="mt-1 block text-xs text-[var(--color-text-tertiary)]">
+                            {a.contactName} · {a.contactPhone}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <Link
+                  href="/profile"
+                  className="mt-2.5 flex items-center gap-1.5 text-xs font-semibold text-[var(--color-purple-300)]"
+                >
+                  <MapPinIcon size={13} />
+                  Manage addresses
+                </Link>
+              </m.section>
+            )
+          )}
+        </AnimatePresence>
 
-        {/* ③ Order summary */}
+        {/* ── Order ────────────────────────────────────────────────────────────────────────── */}
         <section className="mt-7">
-          <SectionLabel>Order · {totals.itemCount} items</SectionLabel>
-          <Card className="mt-3 p-4">
+          <Eyebrow>Order · {totals.itemCount} items</Eyebrow>
+          <GlassPanel className="mt-3 p-4">
             <ul className="space-y-2 text-sm">
               {totals.lines.map((p) => (
                 <li key={p.line.lineId} className="flex items-baseline justify-between gap-3">
                   <span className="min-w-0 text-[var(--color-text-secondary)]">
-                    <span className="tabular">{p.line.quantity}×</span> {p.item.name}
+                    <span className="tabular font-semibold text-[var(--color-orange-500)]">
+                      {p.line.quantity}×
+                    </span>{' '}
+                    {p.item.name}
                     {p.item.variants.length > 1 && ` (${p.variant.name})`}
                     {p.addOnNames.length > 0 && (
                       <span className="text-[var(--color-purple-300)]">
@@ -235,119 +345,94 @@ export default function CheckoutPage() {
                 totalPaise={totals.totalPaise}
               />
             </div>
-          </Card>
+          </GlassPanel>
         </section>
 
-        {/* ④ Payment */}
+        {/* ── Pay ──────────────────────────────────────────────────────────────────────────── */}
         <section className="mt-7">
-          <SectionLabel>Pay with</SectionLabel>
-          <div className="mt-3 space-y-2">
-            {METHODS.map((m) => {
-              const active = method === m.id;
+          <Eyebrow tone="violet">Pay with</Eyebrow>
+          <div className="mt-3 grid grid-cols-2 gap-2.5">
+            {PAYMENT_METHODS.map((m2) => {
+              const active = method === m2.id;
               return (
                 <button
-                  key={m.id}
+                  key={m2.id}
                   type="button"
-                  onClick={() => setMethod(m.id)}
+                  onClick={() => setMethod(m2.id)}
                   aria-pressed={active}
-                  className="pressable flex w-full items-center justify-between rounded-[14px] border px-4 py-3.5"
+                  className="pressable relative rounded-[14px] px-3.5 py-3 text-left transition-colors duration-200"
                   style={{
-                    borderColor: active ? 'var(--color-orange-500)' : 'var(--color-border-subtle)',
-                    background: active ? 'rgb(255 107 26 / 0.08)' : 'var(--color-inset)',
+                    background: active
+                      ? 'linear-gradient(140deg, rgb(255 107 26 / 0.12), rgb(168 85 247 / 0.08))'
+                      : 'var(--color-inset)',
+                    border: `1px solid ${active ? 'rgb(255 107 26 / 0.4)' : 'var(--color-border-subtle)'}`,
                   }}
                 >
-                  <span className="flex items-center gap-3">
-                    <span
-                      aria-hidden
-                      className="flex h-4 w-4 items-center justify-center rounded-full border-2"
-                      style={{
-                        borderColor: active
-                          ? 'var(--color-orange-500)'
-                          : 'var(--color-border-strong)',
-                      }}
-                    >
-                      {active && (
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ background: 'var(--color-orange-500)' }}
-                        />
-                      )}
-                    </span>
-                    <span className="text-left">
-                      <span className="block text-sm font-semibold">{m.label}</span>
-                      <span className="block text-xs text-[var(--color-text-secondary)]">
-                        {m.note}
+                  <span className="flex items-center justify-between">
+                    <span className="font-display text-sm font-bold">{m2.label}</span>
+                    {m2.id === 'UPI' && (
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                        style={{ background: 'rgb(34 197 94 / 0.16)', color: 'var(--color-success)' }}
+                      >
+                        FASTEST
                       </span>
-                    </span>
+                    )}
                   </span>
-                  {m.id === 'UPI' && (
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                      style={{ background: 'rgb(34 197 94 / 0.15)', color: 'var(--color-success)' }}
-                    >
-                      Fastest
-                    </span>
-                  )}
+                  <span className="mt-0.5 block text-[11px] text-[var(--color-text-secondary)]">
+                    {m2.note}
+                  </span>
                 </button>
               );
             })}
           </div>
         </section>
 
-        {/* ⑤ Note */}
+        {/* ── Note ─────────────────────────────────────────────────────────────────────────── */}
         <section className="mt-7">
-          <SectionLabel>Note for the rider</SectionLabel>
+          <Eyebrow>{takeaway ? 'Note for the kitchen' : 'Note for the rider'}</Eyebrow>
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
             maxLength={140}
-            placeholder="Call when you reach the gate"
-            className="mt-3 h-12 w-full rounded-[12px] border bg-[var(--color-inset)] px-4 text-base placeholder:text-[var(--color-text-tertiary)] focus:outline-none"
+            placeholder={takeaway ? 'Extra napkins, no cutlery…' : 'Call when you reach the gate'}
+            className="mt-3 h-12 w-full rounded-[13px] border bg-[var(--color-inset)] px-4 text-base placeholder:text-[var(--color-text-tertiary)] focus:outline-none"
           />
         </section>
 
         {!status.acceptingOrders && (
           <p
-            className="mt-6 rounded-[12px] px-4 py-3 text-sm"
+            className="mt-6 rounded-[13px] px-4 py-3 text-sm"
             style={{ background: 'rgb(255 107 26 / 0.12)', color: 'var(--color-orange-500)' }}
           >
             Ordering opens at 7 PM. Your cart is saved.
           </p>
         )}
 
-        <div className="mt-6">
-          <Button size="lg" className="w-full" disabled={blocked || placing} onClick={placeOrder}>
+        <div className="mt-7">
+          <TactileButton
+            size="lg"
+            className="w-full"
+            disabled={blocked || placing}
+            onClick={placeOrder}
+          >
             {placing ? (
               'Placing…'
             ) : (
               <>
                 <CheckIcon size={18} strokeWidth={2.4} />
-                Place order · <span className="tabular">{Money.format(totals.totalPaise)}</span>
+                {takeaway ? 'Confirm pickup' : 'Place order'} ·{' '}
+                <AnimatedPaise value={totals.totalPaise} />
               </>
             )}
-          </Button>
-          <p className="mt-3 text-center text-xs text-[var(--color-text-tertiary)]">
-            Payment is simulated — no gateway is connected yet.
+          </TactileButton>
+          <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-[var(--color-text-tertiary)]">
+            <ClockIcon size={12} />
+            {takeaway ? `Ready in ~${takeawayMinutes} min` : `Arrives in ~${deliveryMinutes} min`} ·
+            10 minutes to change your mind
           </p>
         </div>
       </div>
     </main>
-  );
-}
-
-function Row({
-  label,
-  value,
-  valueClass = '',
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between">
-      <dt className="text-[var(--color-text-secondary)]">{label}</dt>
-      <dd className={`tabular ${valueClass}`}>{value}</dd>
-    </div>
   );
 }

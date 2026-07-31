@@ -9,11 +9,13 @@ import {
   STATUS_COPY,
   editWindow,
   orderProgress,
+  statusCopyFor,
   toPaise,
   useOrders,
   type OrderStatus,
   type PlacedOrder,
 } from '@/store/orders';
+import { PickupCode } from '@/components/pickup-code';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { CheckIcon, ChevronLeftIcon, ClockIcon, EditIcon, MapPinIcon, PhoneIcon } from '@/components/icons';
 import { BillSummary } from '@/components/bill-summary';
@@ -76,6 +78,7 @@ export default function OrderTrackingPage() {
 
   const progress = orderProgress(order, now);
   const delivered = progress.status === 'DELIVERED';
+  const copy = statusCopyFor(order.fulfilmentType);
 
   return (
     <main className="page-in relative min-h-dvh">
@@ -100,7 +103,9 @@ export default function OrderTrackingPage() {
           </div>
         </header>
 
-        <CountdownRing progress={progress} delivered={delivered} />
+        {/* Takeaway runs the same state machine, but "out for delivery" would be a lie when the
+            customer is the courier — so the wording differs while the flow does not. */}
+        <CountdownRing progress={progress} delivered={delivered} copy={copy} />
 
         <EditWindowCard
           order={order}
@@ -121,29 +126,42 @@ export default function OrderTrackingPage() {
                 stepProgress={progress.stepProgress}
                 reachedAt={progress.reachedAt[step]}
                 isLast={index === ORDER_FLOW.length - 1}
+                copy={copy}
               />
             ))}
           </ol>
         </Card>
 
-        {/* Delivery OTP — appears only once the rider is en route. */}
-        {(progress.status === 'OUT_FOR_DELIVERY' || delivered) && (
-          <Card className="mt-5 p-4 text-center" weight="strong">
-            <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
-              Delivery OTP
-            </p>
-            <p className="tabular text-gradient mt-2 font-mono text-4xl font-bold tracking-[0.2em]">
-              {order.otp}
-            </p>
-            <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-              Show this to your rider
-            </p>
-          </Card>
+        {/* Takeaway: the collection code is needed from the moment the order exists, because the
+            customer may set off before it is ready. Delivery: the OTP only matters once a rider
+            is actually en route, so showing it earlier is noise. */}
+        {order.fulfilmentType === 'TAKEAWAY' && order.pickupToken !== null ? (
+          <div className="mt-5">
+            <PickupCode
+              token={order.pickupToken}
+              orderNumber={order.orderNumber}
+              ready={progress.stepIndex >= 3}
+            />
+          </div>
+        ) : (
+          (progress.status === 'OUT_FOR_DELIVERY' || delivered) && (
+            <Card className="mt-5 p-4 text-center" weight="strong">
+              <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
+                Delivery OTP
+              </p>
+              <p className="tabular text-gradient mt-2 font-mono text-4xl font-bold tracking-[0.2em]">
+                {order.otp}
+              </p>
+              <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                Show this to your rider
+              </p>
+            </Card>
+          )
         )}
 
-        {/* Address */}
+        {/* Where it's going — or where to collect it. */}
         <section className="mt-7">
-          <SectionLabel>Delivering to</SectionLabel>
+          <SectionLabel>{order.address !== null ? 'Delivering to' : 'Collect from'}</SectionLabel>
           <Card className="mt-3 p-4">
             <div className="flex items-start gap-3">
               <span
@@ -152,21 +170,32 @@ export default function OrderTrackingPage() {
               >
                 <MapPinIcon size={17} />
               </span>
-              <div className="min-w-0 text-sm">
-                <p className="font-semibold">{order.address.label}</p>
-                <p className="mt-0.5 leading-relaxed text-[var(--color-text-secondary)]">
-                  {order.address.flatOrRoom}
-                  {order.address.floor.length > 0 && `, Floor ${order.address.floor}`},{' '}
-                  {blockLabel(order.address.block)}
-                  <br />
-                  {COMPLEX_NAME}
-                  {order.address.landmark.length > 0 && ` · ${order.address.landmark}`}
-                </p>
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
-                  <PhoneIcon size={13} />
-                  {order.address.contactName} · {order.address.contactPhone}
-                </p>
-              </div>
+              {order.address !== null ? (
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold">{order.address.label}</p>
+                  <p className="mt-0.5 leading-relaxed text-[var(--color-text-secondary)]">
+                    {order.address.flatOrRoom}
+                    {order.address.floor.length > 0 && `, Floor ${order.address.floor}`},{' '}
+                    {blockLabel(order.address.block)}
+                    <br />
+                    {COMPLEX_NAME}
+                    {order.address.landmark.length > 0 && ` · ${order.address.landmark}`}
+                  </p>
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
+                    <PhoneIcon size={13} />
+                    {order.address.contactName} · {order.address.contactPhone}
+                  </p>
+                </div>
+              ) : (
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold">Juice Stop counter</p>
+                  <p className="mt-0.5 leading-relaxed text-[var(--color-text-secondary)]">
+                    {COMPLEX_NAME}, Kattankulathur
+                    <br />
+                    Open 7 PM — 4 AM
+                  </p>
+                </div>
+              )}
             </div>
           </Card>
         </section>
@@ -335,9 +364,11 @@ function EditWindowCard({
 function CountdownRing({
   progress,
   delivered,
+  copy,
 }: {
   progress: ReturnType<typeof orderProgress>;
   delivered: boolean;
+  copy: typeof STATUS_COPY;
 }) {
   const minutes = Math.floor(progress.secondsRemaining / 60);
   const seconds = progress.secondsRemaining % 60;
@@ -395,10 +426,10 @@ function CountdownRing({
       </div>
 
       <p className="mt-5 font-display text-lg font-semibold">
-        {STATUS_COPY[progress.status].label}
+        {copy[progress.status].label}
       </p>
       <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-        {STATUS_COPY[progress.status].line}
+        {copy[progress.status].line}
       </p>
 
       {progress.isLate && !delivered && (
@@ -417,6 +448,7 @@ function TimelineStep({
   stepProgress,
   reachedAt,
   isLast,
+  copy,
 }: {
   step: OrderStatus;
   index: number;
@@ -424,6 +456,7 @@ function TimelineStep({
   stepProgress: number;
   reachedAt: number | undefined;
   isLast: boolean;
+  copy: typeof STATUS_COPY;
 }) {
   const done = index < currentIndex;
   const active = index === currentIndex;
@@ -472,11 +505,11 @@ function TimelineStep({
               done || active ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
           }}
         >
-          {STATUS_COPY[step].label}
+          {copy[step].label}
         </p>
         {active && (
           <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-            {STATUS_COPY[step].line}
+            {copy[step].line}
           </p>
         )}
         {reachedAt !== undefined && (done || active) && (

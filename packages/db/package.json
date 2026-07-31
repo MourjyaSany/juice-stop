@@ -31,6 +31,7 @@
   "devDependencies": {
     "@juice-stop/config": "workspace:*",
     "@juice-stop/core": "workspace:*",
+    "@juice-stop/menu": "workspace:*",
     "dotenv": "^16.4.0",
     "prisma": "^6.2.0",
     "tsx": "^4.19.0",
