@@ -23,7 +23,12 @@ import { SPRING } from '@/components/motion-provider';
  * screen — more than the hero, more than the menu. It sits directly under the fold and disappears
  * entirely once every order is delivered, so it never becomes permanent furniture.
  */
-export function ActiveOrders() {
+export function ActiveOrders({
+  /** `page` brings its own max-width container; `inline` inherits the parent's. */
+  layout = 'page',
+}: {
+  layout?: 'page' | 'inline';
+} = {}) {
   const hydrated = useHydrated();
   const orders = useOrders((s) => s.orders);
   const [now, setNow] = useState(() => Date.now());
@@ -39,7 +44,7 @@ export function ActiveOrders() {
   if (live.length === 0) return null;
 
   return (
-    <section className="mx-auto w-full max-w-lg px-5 pb-2">
+    <section className={layout === 'page' ? 'mx-auto w-full max-w-lg px-5 pb-2' : 'mt-6'}>
       <div className="mb-3 flex items-center gap-2">
         <span className="relative flex h-2 w-2" aria-hidden>
           <span

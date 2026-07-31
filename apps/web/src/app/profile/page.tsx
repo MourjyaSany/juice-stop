@@ -14,6 +14,7 @@ import {
 } from '@/components/icons';
 import { Button, Card, EmptyState, Field, Input, SectionLabel, Skeleton, useHydrated } from '@/components/ui';
 import { AddressSheet } from '@/components/address-sheet';
+import { ActiveOrders } from '@/components/landing/active-orders';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { checkProfileReadiness, isValidIndianPhone, useProfile, type SavedAddress } from '@/store/profile';
 
@@ -50,6 +51,11 @@ export default function ProfilePage() {
           </div>
         ) : (
           <>
+            {/* Anything still cooking outranks profile admin — surfaced here as well as on the
+                home screen and the Orders tab badge, so an in-progress order is never more than
+                a glance away wherever you happen to be. */}
+            <ActiveOrders layout="inline" />
+
             {/* Readiness gate. Names the specific gaps — "add your phone number" is actionable,
                 "profile incomplete" is not. */}
             <div className="mt-5">

@@ -343,11 +343,19 @@ function ItemCard({
 
   return (
     <m.article
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      // Stagger caps at 300 ms so a 90-item category still finishes appearing promptly.
-      transition={{ ...SPRING.smooth, delay: Math.min(index * 0.018, 0.3) }}
-      className="group relative flex items-center gap-3.5 rounded-[18px] p-3.5 transition-[transform,box-shadow,border-color] duration-300"
+      /* ENTRANCE — fires when the row scrolls into view, not on mount. In a 90-item category the
+         rows below the fold would otherwise have finished animating before anyone saw them.
+         Stagger is `index % 8` so each screenful ripples, rather than item 80 waiting 1.4s. */
+      initial={{ opacity: 0, y: 18, scale: 0.97 }}
+      whileInView={{ opacity: soldOut ? 0.45 : 1, y: 0, scale: 1 }}
+      viewport={{ once: true, margin: '0px 0px -8% 0px' }}
+      transition={{ ...SPRING.smooth, delay: (index % 8) * 0.04 }}
+      /* INTERACTION — deliberately different in kind from the entrance. Entrance travels
+         vertically; touch compresses in place. A press that repeated the entrance would read as
+         the row reloading rather than responding. */
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.985 }}
+      className="group relative flex items-center gap-3.5 rounded-[18px] p-3.5 transition-[box-shadow,border-color] duration-300"
       style={{
         background: inCart
           ? 'linear-gradient(135deg, rgb(255 107 26 / 0.09), rgb(168 85 247 / 0.05))'
@@ -356,9 +364,17 @@ function ItemCard({
         boxShadow: inCart
           ? '0 6px 22px -12px rgb(255 107 26 / 0.55)'
           : '0 2px 8px -4px rgb(0 0 0 / 0.4)',
-        opacity: soldOut ? 0.45 : 1,
       }}
     >
+      {/* Warm wash that blooms under the pointer. Opacity only — no repaint of the card. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-[18px] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{
+          background:
+            'radial-gradient(120% 100% at 12% 50%, rgb(255 107 26 / 0.10), transparent 60%)',
+        }}
+      />
       <div
         className="h-[4.25rem] w-[4.25rem] shrink-0 transition-transform duration-300 group-hover:scale-[1.05]"
         style={{ filter: soldOut ? 'grayscale(1)' : undefined }}
