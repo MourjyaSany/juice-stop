@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { m, useReducedMotion } from 'motion/react';
 import { Money, MIN_ORDER_PAISE, type StoreStatus } from '@juice-stop/core';
 import { AuroraField, GridVeil, ParticleField, StatusPill, StickerField } from '@/components/system';
-import { CinematicStill } from './cinematic-still';
+import { BurgerAssembly } from './burger-assembly';
 import { ArrowRightIcon, ClockIcon, MapPinIcon } from '@/components/icons';
 import { SPRING } from '@/components/motion-provider';
 
@@ -217,7 +217,7 @@ export function Hero({ status }: { status: StoreStatus }) {
         transition={{ ...SPRING.smooth, delay: 0.55 }}
       >
         <div className="mx-auto w-full max-w-lg">
-          <CinematicStill slug="hero" priority radius={26} className="aspect-[5/4] w-full" />
+          <BurgerAssembly priority radius={26} className="aspect-[5/4] w-full" />
         </div>
         {/* Fade the image into the page rather than ending it with a hard edge. */}
         <div

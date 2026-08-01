@@ -83,55 +83,15 @@ export const STORY_ASSETS: GeneratedAsset[] = [
 /* ── Burger assembly layers ─────────────────────────────────────────────────────────────────── */
 
 /**
- * The hero's scroll-assembled burger is not one image — it is a stack of ingredient cut-outs that
- * fly in and settle as the customer scrolls.
+ * The hero's burger layers are deliberately **not** in this registry.
  *
- * Every layer must therefore be shot as if it were part of the *same photograph*: identical camera
- * height, identical focal length, identical light rig. If the lettuce is lit from a different side
- * than the patty, no amount of animation hides it — the stack reads as clip-art. That consistency
- * is what `CUTOUT_STYLE` exists to guarantee, and why it is appended verbatim rather than
- * paraphrased per layer.
- *
- * These are the only assets in the app that require a **transparent background**. A generator that
- * cannot produce alpha cannot fill these slots, so they intentionally have no jpg fallback path
- * that would quietly look wrong.
+ * They were extracted from a supplied sprite sheet rather than generated, they live under
+ * `/generated/burger/` rather than `/generated/`, and they must never fall back to a gradient
+ * plate — a stack of eleven emoji plates is not a burger. `BurgerAssembly` owns that table
+ * directly, and `tools/extract-burger-sprites.py` produces the files.
  */
-export const CUTOUT_STYLE =
-  'isolated on a fully transparent background, alpha channel, no backdrop, no surface, no shadow ' +
-  'cast onto anything, straight-on eye-level product shot at 85mm, identical camera height and ' +
-  'distance, soft key light from the upper left at 45 degrees plus a warm orange (#FF6B1A) rim ' +
-  'from the left and a cool violet (#A855F7) rim from the right, ultra realistic food photography, ' +
-  'razor-sharp macro detail, visible texture, photoreal, not an illustration, not 3D render, ' +
-  'no text, no watermark, centred, square crop';
 
-const layer = (slug: string, alt: string, subject: string, fallback: string): GeneratedAsset => ({
-  slug,
-  alt,
-  prompt: `${subject}, ${CUTOUT_STYLE}`,
-  fallback,
-  tone: 'warm',
-});
-
-export const BURGER_LAYER_ASSETS: GeneratedAsset[] = [
-  layer('bl-bun-bottom', 'Bottom bun', 'the bottom half of a toasted sesame brioche burger bun, cut side up, glossy butter-toasted face', '🍞'),
-  layer('bl-sauce', 'Burger sauce', 'a thick swirl of creamy burger sauce, glossy, mid-drip', '🥣'),
-  layer('bl-lettuce', 'Lettuce', 'a single ruffled leaf of crisp iceberg lettuce, water droplets, vivid green', '🥬'),
-  layer('bl-tomato', 'Tomato', 'two overlapping slices of ripe beefsteak tomato, seeds and juice visible', '🍅'),
-  layer('bl-onion', 'Onion', 'three rings of raw red onion, translucent edges', '🧅'),
-  layer('bl-pickles', 'Pickles', 'four crinkle-cut dill pickle slices, glossy brine sheen', '🥒'),
-  layer('bl-patty', 'Beef patty', 'a thick flame-grilled patty with deep charred grill marks and rendered juices', '🥩'),
-  layer('bl-cheese', 'Melted cheese', 'a slice of cheddar melting and draping over an edge, molten cheese pull', '🧀'),
-  layer('bl-bun-top', 'Top bun', 'the domed top half of a sesame brioche burger bun, glossy egg wash, scattered sesame seeds', '🍔'),
-  layer('bl-steam', 'Steam', 'wisps of white steam and heat haze rising, soft and translucent', '💨'),
-  layer('bl-sesame', 'Sesame seeds', 'a few loose sesame seeds suspended in mid-air, sharp focus', '⚪'),
-  layer('bl-assembled', 'Assembled burger', 'a complete stacked cheeseburger — sesame brioche bun, flame-grilled patty, melted cheddar, lettuce, tomato, onion, pickles', '🍔'),
-];
-
-export const ALL_ASSETS: GeneratedAsset[] = [
-  ...FOOD_ASSETS,
-  ...STORY_ASSETS,
-  ...BURGER_LAYER_ASSETS,
-];
+export const ALL_ASSETS: GeneratedAsset[] = [...FOOD_ASSETS, ...STORY_ASSETS];
 
 const BY_SLUG = new Map(ALL_ASSETS.map((a) => [a.slug, a]));
 
