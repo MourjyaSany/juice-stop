@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Money } from '@juice-stop/core';
-import { ITEMS, priceFrom } from '@/data/menu';
+import { BROWSABLE_ITEMS as ITEMS, priceFrom } from '@/data/menu';
 import { assetForItem } from '@/data/assets';
 import { GeneratedImage, ScrollReveal, ScrollStagger, SectionHeading } from '@/components/system';
 import { ArrowRightIcon, DietMark } from '@/components/icons';

@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { getStoreStatus, Money, MIN_ORDER_PAISE } from '@juice-stop/core';
 import { MenuBrowser } from '@/components/menu-browser';
 import { OrderingBanner } from '@/components/ordering-banner';
+import { StickerField } from '@/components/system';
 import { ChevronLeftIcon, ClockIcon } from '@/components/icons';
 
 export const metadata: Metadata = {
@@ -35,6 +36,12 @@ export default function MenuPage() {
           className="absolute -top-[10%] right-[-25%] h-[45vh] w-[60vw] rounded-full blur-[120px]"
           style={{ background: 'radial-gradient(circle, rgb(168 85 247 / 0.16), transparent 65%)' }}
         />
+
+        {/* Stickers live in the *fixed* backdrop rather than scrolling with the list.
+            The menu's height swings from 194 items to two as filters are applied, so a scrolling
+            field would thin out or bunch up depending on what the customer searched for. Anchored
+            to the viewport, the density stays exactly as designed no matter what is on screen. */}
+        <StickerField count={9} seed={67} opacity={0.12} />
       </div>
 
       <div className="pb-nav mx-auto w-full max-w-lg px-5 pt-6">

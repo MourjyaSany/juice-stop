@@ -67,6 +67,14 @@ export interface MenuCategory {
   name: string;
   emoji: string;
   note?: string;
+  /**
+   * Excluded from the browsable menu.
+   *
+   * Checkout extras are modelled as ordinary products so they price, snapshot and reach the
+   * kitchen through exactly the same path as everything else — no parallel "extras" pricing to
+   * drift out of sync. They simply are not browsable, because their place is at checkout.
+   */
+  hidden?: boolean;
 }
 
 /* ── Groups & categories ────────────────────────────────────────────────────────────────────── */
@@ -107,7 +115,14 @@ export const CATEGORIES: readonly MenuCategory[] = [
   { id: 'shakes', groupId: 'drinks', name: 'Milk Shake', emoji: '🥤', note: 'All ₹70' },
 
   { id: 'combo', groupId: 'combos', name: 'Combo', emoji: '🎁' },
+
+  { id: 'extras', groupId: 'snacks', name: 'Extras', emoji: '➕', hidden: true },
 ];
+
+/** Categories a customer can browse. */
+export const BROWSABLE_CATEGORIES: readonly MenuCategory[] = CATEGORIES.filter(
+  (c) => c.hidden !== true,
+);
 
 /* ── Builders ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -463,6 +478,18 @@ const COMBO = [
   }),
 ];
 
+/**
+ * Checkout extras — small last-minute additions, each repeatable.
+ *
+ * Real products, so they price and snapshot through the same code as everything else. They live
+ * in a hidden category because their moment is at checkout, not while browsing.
+ */
+const EXTRAS = [
+  one('extras', 'snacks', 'Mayo', 20, { veg: true, prep: 20 }),
+  one('extras', 'snacks', 'Kurkure', 20, { veg: true, prep: 20 }),
+  one('extras', 'snacks', 'Compact Cigarette', 15, { veg: true, prep: 20 }),
+];
+
 /* ── Export ─────────────────────────────────────────────────────────────────────────────────── */
 
 export const ITEMS: readonly MenuItem[] = [
@@ -472,7 +499,16 @@ export const ITEMS: readonly MenuItem[] = [
   ...SNACKS,
   ...HOT, ...JUICE, ...LEMON, ...MOJITO, ...LASSI, ...FALOODA, ...SHAKES,
   ...COMBO,
+  ...EXTRAS,
 ];
+
+/** The checkout extras, in display order. */
+export const CHECKOUT_EXTRAS: readonly MenuItem[] = EXTRAS;
+
+/** Everything a customer can browse — excludes hidden categories such as checkout extras. */
+export const BROWSABLE_ITEMS: readonly MenuItem[] = ITEMS.filter(
+  (item) => !CATEGORIES.some((c) => c.id === item.categoryId && c.hidden === true),
+);
 
 export const TAG_LABELS: Record<string, string> = {
   BESTSELLER: 'Bestseller',

@@ -17,6 +17,7 @@ import { checkProfileReadiness, useProfile } from '@/store/profile';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { estimateEtaSeconds, snapshotLines, snapshotTotals } from '@/lib/order-builder';
 import { FulfilmentToggle } from '@/components/checkout/fulfilment-toggle';
+import { CheckoutExtras } from '@/components/checkout/extras';
 import { BillSummary } from '@/components/bill-summary';
 import { AnimatedPaise } from '@/components/animated-value';
 import {
@@ -307,6 +308,11 @@ export default function CheckoutPage() {
             )
           )}
         </AnimatePresence>
+
+        {/* ── Extras ───────────────────────────────────────────────────────────────────────────
+            Placed immediately above the order summary so an addition is confirmed by the line and
+            the total moving directly beneath the tap, rather than somewhere off screen. */}
+        <CheckoutExtras />
 
         {/* ── Order ────────────────────────────────────────────────────────────────────────── */}
         <section className="mt-7">

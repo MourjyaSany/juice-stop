@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, m } from 'motion/react';
 import { Money } from '@juice-stop/core';
 import {
-  CATEGORIES,
+  BROWSABLE_CATEGORIES as CATEGORIES,
   GROUPS,
-  ITEMS,
+  BROWSABLE_ITEMS as ITEMS,
   TAG_LABELS,
   hasChoices,
   priceFrom,

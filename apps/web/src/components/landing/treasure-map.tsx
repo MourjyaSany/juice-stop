@@ -77,10 +77,8 @@ function Checkpoint({
   return (
     <li ref={ref} className="relative">
       {/* Card — 64% width so the artwork is legible, offset to its side. */}
-      {/* z-10 keeps the card above the connector, so the trail passes cleanly *behind* the
-          artwork rather than crossing over it. */}
       <m.div
-        className={`relative z-10 w-[64%] ${side === 'left' ? 'mr-auto' : 'ml-auto'}`}
+        className={`relative w-[64%] ${side === 'left' ? 'mr-auto' : 'ml-auto'}`}
         initial={reduced ? false : { opacity: 0, x: side === 'left' ? -28 : 28, y: 12 }}
         animate={inView || reduced ? { opacity: 1, x: 0, y: 0 } : {}}
         transition={SPRING.smooth}
@@ -152,23 +150,26 @@ function Connector({
 }) {
   const reduced = useReducedMotion();
 
-  // Card centres sit at roughly 32% and 68%. The S-curve leaves one and arrives at the other.
+  // Cards are 64% wide and side-aligned, so their centres sit at exactly 32% and 68%. The curve
+  // leaves one centre and arrives at the other.
   //
-  // The path deliberately starts at y=-14 and ends at y=114, i.e. *past* both ends of its own
-  // box, and the box is pulled into the cards with negative margins. Stopping at the box edge
-  // left a visible gap between the trail and the artwork — the line has to run underneath the
-  // card corners for the route to read as continuous.
+  // It runs from y=0 to y=100 — the exact top and bottom of this box — and the box is the entire
+  // gap between the cards. So the trail meets each card's edge flush, with nothing left over.
+  //
+  // An earlier attempt overshot to y=-14/114 with negative margins so the line would tuck *under*
+  // the cards. That was wrong: the cards are translucent (12% tint), so the line showed straight
+  // through the artwork instead of disappearing behind it.
   const d =
     from === 'left'
-      ? 'M32,-14 C32,32 68,60 68,114'
-      : 'M68,-14 C68,32 32,60 32,114';
+      ? 'M32,0 C32,30 68,70 68,100'
+      : 'M68,0 C68,30 32,70 32,100';
 
   const gradientId = `trail-${from}`;
 
   return (
-    // Negative margins tuck the connector under the cards above and below it.
-    <div className="relative -mb-4 -mt-4 h-28 w-full" aria-hidden>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+    <div className="relative h-24 w-full" aria-hidden>
+      {/* No overflow-visible: the stroke must not bleed past the gap onto a card. */}
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#FF6B1A" stopOpacity="0.9" />
@@ -182,15 +183,22 @@ function Connector({
           d={d}
           fill="none"
           stroke={`rgb(${accent})`}
-          strokeWidth="6"
-          strokeLinecap="round"
-          opacity={0.13}
+          strokeWidth="5"
+          strokeLinecap="butt"
+          opacity={0.16}
           vectorEffect="non-scaling-stroke"
+          /* Owns the draw-on reveal. pathLength is safe here because this path sets no
+             strokeDasharray of its own. */
           initial={reduced ? false : { pathLength: 0 }}
           animate={active || reduced ? { pathLength: 1 } : {}}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
         />
 
+        {/* The dashed overlay must NOT animate pathLength.
+            Motion implements pathLength *by writing* strokeDasharray and strokeDashoffset, so an
+            explicit strokeDasharray on the same element fights it and the stroke renders
+            incomplete. The solid glow above owns the draw-on reveal; this one simply fades in
+            behind it and then crawls. */}
         <m.path
           d={d}
           fill="none"
@@ -199,11 +207,47 @@ function Connector({
           strokeLinecap="round"
           strokeDasharray="5 6"
           vectorEffect="non-scaling-stroke"
-          initial={reduced ? false : { pathLength: 0, opacity: 0 }}
-          animate={active || reduced ? { pathLength: 1, opacity: 1 } : {}}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-        />
+          initial={reduced ? false : { opacity: 0 }}
+          animate={active || reduced ? { opacity: 1 } : {}}
+          transition={{ duration: 0.5, ease: 'easeOut', delay: 0.55 }}
+        >
+          {/* Slow crawl along the trail — SMIL rather than JS so it costs no frames. */}
+          {!reduced && (
+            <animate
+              attributeName="stroke-dashoffset"
+              from="0"
+              to="-22"
+              dur="1.6s"
+              repeatCount="indefinite"
+            />
+          )}
+        </m.path>
       </svg>
+
+      {/* Anchor dots where the trail meets each card.
+          A dashed stroke lands wherever the pattern happens to fall, so the line may or may not
+          visually touch the edge — these guarantee it does. Rendered as HTML, not SVG circles,
+          because preserveAspectRatio="none" would squash a circle into an ellipse. */}
+      {(
+        [
+          { x: from === 'left' ? 32 : 68, edge: 'top' as const },
+          { x: from === 'left' ? 68 : 32, edge: 'bottom' as const },
+        ]
+      ).map(({ x, edge }) => (
+        <m.span
+          key={edge}
+          className="absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{
+            left: `${x}%`,
+            [edge]: 0,
+            background: `rgb(${accent})`,
+            boxShadow: `0 0 10px rgb(${accent} / 0.9)`,
+          }}
+          initial={reduced ? false : { scale: 0, opacity: 0 }}
+          animate={active || reduced ? { scale: 1, opacity: 1 } : {}}
+          transition={{ ...SPRING.bouncy, delay: edge === 'top' ? 0.1 : 0.75 }}
+        />
+      ))}
     </div>
   );
 }
