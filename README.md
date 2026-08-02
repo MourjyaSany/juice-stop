@@ -26,6 +26,10 @@ git clone https://github.com/MourjyaSany/juice-stop.git && cd juice-stop && node
 git clone https://github.com/MourjyaSany/juice-stop.git; cd juice-stop; node scripts/bootstrap.mjs
 ```
 
+**Never set up a project like this before, or on Windows?** [`mano.md`](./mano.md) is a
+click-by-click walkthrough — installing Node, installing Git, running the app, logging into the
+kitchen, and every error you might hit.
+
 The only things you need beforehand are **git** and **Node 24+** ([nodejs.org](https://nodejs.org)).
 pnpm is installed for you at the exact pinned version. There is no Docker, no database server, no
 API keys and no accounts to create — SQLite is a single file and every default in `.env.example`
@@ -156,14 +160,18 @@ python tools/extract-burger-sprites.py
 
 | Area | State |
 |---|---|
-| Menu, cart, checkout, tracking | ✅ Working (browser-local state) |
-| Kitchen dashboard | ✅ Working, database-backed |
+| Menu, cart, checkout | ✅ Working. Checkout posts to the API and is priced server-side |
+| Order tracking | ✅ Live. Follows real kitchen status, not a simulated timer |
+| Kitchen dashboard | ✅ Working — four live columns, SSE + REST reconcile |
+| Inventory / stock control | ✅ Working. Sold-out reaches the storefront with no refresh |
+| Delivery completion | ✅ Gated on the customer's 4-digit code. Riders use the kitchen login |
 | API — menu, orders, kitchen | ✅ Working |
 | Database, migrations, seed | ✅ SQLite |
-| Storefront reading from the API | ⚠️ Not yet — renders from `packages/menu`, which is also what seeds the DB, so the two cannot disagree |
+| Menu rendering | ⚠️ Structure and prices come from `packages/menu` at build time; only availability is live from the API. The seed uses the same package, so the two cannot disagree |
 | Payments | ⚠️ Simulated. No gateway connected; no money moves |
-| Accounts / auth | ❌ Not built. Profile is `localStorage` |
-| Rider app, admin, analytics | ❌ Not built |
+| Kitchen auth | ⚠️ Development credentials, isolated in `modules/kitchen-auth`. Throws on boot in production |
+| Customer accounts / auth | ❌ Not built. Profile is `localStorage`, and `GET /orders/:id` is unauthenticated |
+| Admin, analytics | ❌ Not built |
 
 This is **not** production-ready. It is a working, well-architected foundation with the money-path
 reasoning already in place.
