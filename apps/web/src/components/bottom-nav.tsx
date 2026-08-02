@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useOverlayOpen } from '@/store/overlay';
 import { useEffect, useState } from 'react';
 import { AnimatePresence, m } from 'motion/react';
 import { orderProgress, useOrders } from '@/store/orders';
@@ -30,6 +31,7 @@ const STAFF_ROUTES = ['/kitchen'];
  */
 export function BottomNav() {
   const pathname = usePathname();
+  const overlayOpen = useOverlayOpen();
   const orders = useOrders((s) => s.orders);
   const [activeCount, setActiveCount] = useState(0);
   const [mounted, setMounted] = useState(false);
@@ -51,10 +53,15 @@ export function BottomNav() {
   // on it is both useless and a way for a chef to lose the queue mid-service.
   if (STAFF_ROUTES.some((route) => pathname.startsWith(route))) return null;
 
+  // Withdraw entirely under a modal. The item sheet and the cart drawer are meant to own the
+  // screen; a nav floating over their bottom edge covered the size picker and the checkout
+  // button, which are the two controls those surfaces exist for.
+  if (overlayOpen) return null;
+
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 z-[10000] mx-auto w-[calc(100%-1.5rem)] max-w-[26rem] rounded-[22px] px-1.5 pt-1.5"
+      className="fixed inset-x-0 z-[var(--z-nav)] mx-auto w-[calc(100%-1.5rem)] max-w-[26rem] rounded-[22px] px-1.5 pt-1.5"
       style={{
         bottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
         paddingBottom: '0.375rem',

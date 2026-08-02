@@ -13,6 +13,7 @@ import { GeneratedImage } from './system/generated-image';
 import { TactileButton } from './system/surfaces';
 import { BagIcon, TrashIcon } from './icons';
 import { SPRING } from './motion-provider';
+import { useRegisterOverlay } from '@/store/overlay';
 
 /**
  * Cart as a slide-over.
@@ -26,6 +27,8 @@ import { SPRING } from './motion-provider';
  */
 export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const reduced = useReducedMotion();
+  // Hides the bottom nav while the drawer is up — it used to cover the checkout button.
+  useRegisterOverlay(open);
   const lines = useCart((s) => s.lines);
   const setQuantity = useCart((s) => s.setQuantity);
   const totals = useMemo(() => priceCart(lines), [lines]);
@@ -55,7 +58,7 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center">
+        <div className="fixed inset-0 z-[var(--z-drawer)] flex items-end justify-center">
           <m.button
             type="button"
             aria-label="Close cart"

@@ -136,7 +136,7 @@ export default function OrderTrackingPage() {
         {/* Takeaway: the collection code is needed from the moment the order exists, because the
             customer may set off before it is ready. Delivery: the OTP only matters once a rider
             is actually en route, so showing it earlier is noise. */}
-        {order.fulfilmentType === 'TAKEAWAY' && order.pickupToken !== null ? (
+        {order.fulfilmentType === 'TAKEAWAY' && order.pickupToken !== null && (
           <div className="mt-5">
             <PickupCode
               token={order.pickupToken}
@@ -144,20 +144,29 @@ export default function OrderTrackingPage() {
               ready={progress.stepIndex >= 3}
             />
           </div>
-        ) : (
-          (progress.status === 'OUT_FOR_DELIVERY' || delivered) && (
-            <Card className="mt-5 p-4 text-center" weight="strong">
-              <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
-                Delivery OTP
-              </p>
-              <p className="tabular text-gradient mt-2 font-mono text-4xl font-bold tracking-[0.2em]">
-                {order.otp}
-              </p>
-              <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-                Show this to your rider
-              </p>
-            </Card>
-          )
+        )}
+
+        {/* The completion code.
+            Shown for both fulfilment types, because completing an order now requires it either
+            way — a bag handed across a counter gets the same proof-of-possession check as one
+            handed over at a door. Revealed only once the order is genuinely on its way: earlier
+            it is a number with nothing to do, and this screen has better things to say. */}
+        {(progress.status === 'OUT_FOR_DELIVERY' || delivered) && (
+          <Card className="mt-5 p-4 text-center" weight="strong">
+            <p className="text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-secondary)]">
+              {order.fulfilmentType === 'TAKEAWAY' ? 'Collection code' : 'Delivery code'}
+            </p>
+            <p className="tabular text-gradient mt-2 font-mono text-4xl font-bold tracking-[0.2em]">
+              {order.otp}
+            </p>
+            <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+              {delivered
+                ? 'This order is complete.'
+                : order.fulfilmentType === 'TAKEAWAY'
+                  ? 'Read this out at the counter to collect.'
+                  : 'Read this out to your rider. They cannot complete the order without it.'}
+            </p>
+          </Card>
         )}
 
         {/* Where it's going — or where to collect it. */}

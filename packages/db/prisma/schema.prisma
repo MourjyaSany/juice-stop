@@ -291,6 +291,10 @@ model Order {
   paymentStatus String  @default("PENDING") @map("payment_status")
 
   placedAt      DateTime @default(now()) @map("placed_at")
+  /// When `status` last changed. Stored rather than derived from the event log because the
+  /// customer's countdown restarts on every transition and would otherwise need a join per order
+  /// on every poll. `updatedAt` cannot serve: it also moves for edits and confirm-now.
+  statusChangedAt DateTime @default(now()) @map("status_changed_at")
   /// End of the 10-minute customer grace window; the kitchen holds until it passes.
   editableUntil DateTime @map("editable_until")
   /// The honest ETA we grade ourselves against.

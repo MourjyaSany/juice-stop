@@ -129,6 +129,16 @@ export default function KitchenDashboardPage() {
     return map;
   }, [queue, completed]);
 
+  /** Completion gate. Only orders awaiting handover have one. */
+  const otpGateFor = (order: ApiOrder) =>
+    order.status === 'OUT_FOR_DELIVERY'
+      ? {
+          label: order.fulfilmentType === 'TAKEAWAY' ? 'Collected' : 'Delivered',
+          onSubmit: (otp: string) =>
+            void act(order.id, () => kitchen.delivered(order.id, otp)),
+        }
+      : null;
+
   /** The step back, offered only where the server has one to give. */
   const undoFor = (order: ApiOrder): UndoAction | null => {
     const label = PREVIOUS_LABEL[order.status];
@@ -184,31 +194,19 @@ export default function KitchenDashboardPage() {
         return {
           actions: [
             {
-              label: order.fulfilmentType === 'TAKEAWAY' ? 'Handed over' : 'Out for delivery',
-              onClick: () =>
-                void act(order.id, async () => {
-                  // Takeaway has no rider leg. The state machine still routes through
-                  // OUT_FOR_DELIVERY because it is the only path to DELIVERED, so the counter
-                  // hand-over collapses both moves into one tap rather than making a cook press
-                  // "out for delivery" for a bag that is being handed across a counter.
-                  await kitchen.dispatch(order.id);
-                  if (order.fulfilmentType === 'TAKEAWAY') await kitchen.delivered(order.id);
-                }),
+              label: order.fulfilmentType === 'TAKEAWAY' ? 'Handed to customer' : 'Out for delivery',
+              // Takeaway no longer auto-completes here. Completion is proof of possession for both
+              // fulfilment types now — the code is the proof, and a bag handed across a counter
+              // deserves the same check as one handed over at a door.
+              onClick: () => void act(order.id, () => kitchen.dispatch(order.id)),
             },
           ],
           blocked: null,
         };
       case 'OUT_FOR_DELIVERY':
-        return {
-          actions: [
-            {
-              label: 'Delivered',
-              tone: 'quiet',
-              onClick: () => void act(order.id, () => kitchen.delivered(order.id)),
-            },
-          ],
-          blocked: null,
-        };
+        // No plain action — the only way out of this phase is the code, so offering a button
+        // beside it would just be a button that always errors.
+        return { actions: [], blocked: null };
       default:
         return { actions: [], blocked: null };
     }
@@ -262,6 +260,7 @@ export default function KitchenDashboardPage() {
                       now={now}
                       actions={actions}
                       undo={undoFor(order)}
+                      otpGate={otpGateFor(order)}
                       busy={busyId === order.id}
                       blockedReason={blocked}
                     />

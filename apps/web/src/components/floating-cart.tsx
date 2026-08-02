@@ -63,7 +63,7 @@ export function FloatingCart({
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 96, opacity: 0, scale: 0.94 }}
             transition={SPRING.bouncy}
-            className="fixed inset-x-0 z-40 mx-auto w-full max-w-lg px-4"
+            className="fixed inset-x-0 z-[var(--z-floating-cart)] mx-auto w-full max-w-lg px-4"
             style={{ bottom: `calc(${GAP_ABOVE_NAV}px + env(safe-area-inset-bottom))` }}
           >
             <m.div

@@ -1,4 +1,4 @@
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Money, toBusinessDate, COMMERCIAL_TERMS, type Paise } from '@juice-stop/core';
 import { PrismaService } from '../../core/database/prisma.service.js';
@@ -466,6 +466,38 @@ export class OrderingService {
     return serialised;
   }
 
+  /**
+   * Complete a delivery, against the customer's code.
+   *
+   * The rider has to read the OTP off the customer's phone and type it here. That is the whole
+   * point: "Delivered" pressed from a scooter two streets away is the single easiest way for an
+   * order to be marked complete and never arrive, and a button alone cannot tell the difference.
+   *
+   * Only the sha256 is stored, so this compares hashes — the plaintext exists on the customer's
+   * device and nowhere on the server. Comparison is constant-time; a four-digit code is small
+   * enough that a timing oracle would meaningfully help.
+   */
+  async completeWithOtp(orderId: string, otp: string, actor: ActorRole) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { otpHash: true, status: true },
+    });
+    if (order === null) throw new NotFoundError('Order not found.');
+
+    const supplied = Buffer.from(sha256(otp.trim()));
+    const expected = Buffer.from(order.otpHash);
+    const matches = supplied.length === expected.length && timingSafeEqual(supplied, expected);
+
+    if (!matches) {
+      throw new UnprocessableError(
+        ErrorCode.VALIDATION_FAILED,
+        'That code does not match. Ask the customer to read it from their order screen.',
+      );
+    }
+
+    return this.transition(orderId, 'DELIVERED', actor);
+  }
+
   /** Move an order through the lifecycle. The only path that writes `status`. */
   async transition(orderId: string, to: OrderStatus, actor: ActorRole, reason?: string) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
@@ -493,6 +525,9 @@ export class OrderingService {
         data: {
           status: to,
           version: { increment: 1 },
+          // The customer's countdown restarts from this instant on every phase change, so it is
+          // stamped here — in the one method that writes `status` — and can never drift from it.
+          statusChangedAt: new Date(),
           ...(to === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
         },
         include: { items: true },
@@ -572,6 +607,7 @@ function serialiseOrder(order: {
   paymentMethod: string;
   paymentStatus: string;
   placedAt: Date;
+  statusChangedAt: Date;
   editableUntil: Date;
   promisedAt: Date;
   prepSeconds: number;
@@ -610,6 +646,7 @@ function serialiseOrder(order: {
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
     placedAt: order.placedAt.toISOString(),
+    statusChangedAt: order.statusChangedAt.toISOString(),
     editableUntil: order.editableUntil.toISOString(),
     promisedAt: order.promisedAt.toISOString(),
     prepSeconds: order.prepSeconds,

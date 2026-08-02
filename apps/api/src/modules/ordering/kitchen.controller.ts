@@ -4,6 +4,10 @@ import { OrderingService } from './ordering.service.js';
 import { ValidationError } from '../../core/errors/app-error.js';
 import { KitchenAuthGuard } from '../kitchen-auth/kitchen-auth.guard.js';
 
+const DeliveredSchema = z.object({
+  otp: z.string().regex(/^\d{4}$/, 'The code is four digits.'),
+});
+
 const RejectSchema = z.object({
   reason: z.enum(['OUT_OF_STOCK', 'TOO_BUSY', 'CLOSING_SOON', 'ITEM_ISSUE']),
 });
@@ -92,8 +96,19 @@ export class KitchenController {
     return this.ordering.transition(id, 'OUT_FOR_DELIVERY', 'RIDER');
   }
 
+  /**
+   * Complete an order against the customer's four-digit code.
+   *
+   * Riders work from this same dashboard — there is no separate rider app, and adding one to hold
+   * a single button would be a second deployment, a second login and a second thing to keep in
+   * sync for no capability the kitchen tablet does not already have.
+   */
   @Post('orders/:id/delivered')
-  async delivered(@Param('id') id: string) {
-    return this.ordering.transition(id, 'DELIVERED', 'RIDER');
+  async delivered(@Param('id') id: string, @Body() body: unknown) {
+    const parsed = DeliveredSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Enter the four-digit code from the customer.');
+    }
+    return this.ordering.completeWithOtp(id, parsed.data.otp, 'RIDER');
   }
 }

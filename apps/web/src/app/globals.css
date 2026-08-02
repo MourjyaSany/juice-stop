@@ -419,6 +419,17 @@ body::after {
   animation: page-in 0.35s var(--ease-out-expo) both;
 }
 
+:root {
+  /* One stacking order for every fixed surface.
+     These previously lived as literals across five components, and the nav had drifted to
+     z-10000 — above the sheets it was supposed to sit under. Named tokens make the order a
+     decision rather than an arms race. */
+  --z-nav: 50;
+  --z-floating-cart: 60;
+  --z-sheet: 100;
+  --z-drawer: 110;
+}
+
 /* Bottom navigation clearance, respecting the home indicator. */
 .pb-nav {
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));

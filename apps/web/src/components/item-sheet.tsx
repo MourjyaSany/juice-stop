@@ -6,6 +6,7 @@ import { addOnPrice, type MenuItem } from '@/data/menu';
 import { useCart } from '@/store/cart';
 import { CheckIcon, DietMark, MinusIcon, PlusIcon } from './icons';
 import { Button } from './ui';
+import { useRegisterOverlay } from '@/store/overlay';
 
 /**
  * Item detail sheet — size and add-on selection.
@@ -27,6 +28,8 @@ export function ItemSheet({
   onAdded?: ((name: string) => void) | undefined;
 }) {
   const add = useCart((s) => s.add);
+  // Hides the bottom nav while the panel is up — it used to cover the size and add-on controls.
+  useRegisterOverlay(open && item !== null);
   const [variantId, setVariantId] = useState('');
   const [addOnIds, setAddOnIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(1);
@@ -75,7 +78,7 @@ export function ItemSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center">
+    <div className="fixed inset-0 z-[var(--z-sheet)] flex items-end justify-center">
       <button
         type="button"
         aria-label="Close"

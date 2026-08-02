@@ -121,7 +121,10 @@ export interface PlacedOrder extends OrderTotalsSnapshot {
    * timeline below is all it will ever have.
    */
   serverStatus?: OrderStatus;
+  /** When we heard it. Used only as a fallback if the server did not send its own stamp. */
   serverStatusAt?: number;
+  /** When the kitchen actually made the change. Drives the countdown. */
+  statusChangedAt?: number;
 }
 
 interface OrdersState {
@@ -141,7 +144,7 @@ interface OrdersState {
     },
   ) => PlacedOrder;
   /** Record the status the kitchen reported. The only writer of `serverStatus`. */
-  syncFromServer: (orderId: string, status: OrderStatus) => void;
+  syncFromServer: (orderId: string, status: OrderStatus, statusChangedAt?: number) => void;
   /** Apply an edit made during the grace window. Rejected once the window has shut. */
   applyEdit: (
     orderId: string,
@@ -208,10 +211,17 @@ export const useOrders = create<OrdersState>()(
         return placed;
       },
 
-      syncFromServer: (orderId, status) => {
+      syncFromServer: (orderId, status, statusChangedAt) => {
         set((s) => ({
           orders: s.orders.map((o) =>
-            o.id === orderId ? { ...o, serverStatus: status, serverStatusAt: Date.now() } : o,
+            o.id === orderId
+              ? {
+                  ...o,
+                  serverStatus: status,
+                  serverStatusAt: Date.now(),
+                  ...(statusChangedAt !== undefined ? { statusChangedAt } : {}),
+                }
+              : o,
           ),
         }));
       },
@@ -273,6 +283,30 @@ export function editWindow(order: PlacedOrder, now = Date.now()): EditWindow {
     elapsed: Math.min(1, Math.max(0, 1 - remainingMs / EDIT_WINDOW_MS)),
   };
 }
+
+/**
+ * How long each phase promises, in seconds.
+ *
+ * The countdown **restarts** at each of these when the kitchen moves the order, rather than
+ * running down one total from the moment of ordering. That is a deliberate choice about honesty:
+ * a single clock started at checkout is wrong the instant the kitchen runs behind, and a customer
+ * watching it hit zero while their food is still on the grill trusts nothing it says afterwards.
+ * Re-quoting per phase means each number is a fresh promise made at the moment the kitchen
+ * committed to that step — which is the only moment anyone actually knows anything.
+ *
+ * PLACED and ACCEPTED share one 50-minute clock counted from **placement**, not from the
+ * transition. Accepting is an acknowledgement, not progress — restarting the countdown there
+ * would hand the customer back ten minutes they had already spent waiting, which reads as the
+ * order going backwards.
+ */
+export const PHASE_ETA_SECONDS: Record<OrderStatus, number> = {
+  PLACED: 50 * 60,
+  ACCEPTED: 50 * 60,
+  PREPARING: 40 * 60,
+  READY: 25 * 60,
+  OUT_FOR_DELIVERY: 15 * 60,
+  DELIVERED: 0,
+};
 
 /* ── Timeline ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -363,7 +397,7 @@ export const STATUS_COPY: Record<OrderStatus, { label: string; line: string }> =
   ACCEPTED: { label: 'Kitchen is locked in', line: 'You can still make changes.' },
   PREPARING: { label: 'Cooking', line: 'Fresh off the grill.' },
   READY: { label: 'Ready', line: 'Packed and waiting for a rider.' },
-  OUT_FOR_DELIVERY: { label: 'On the way', line: 'Night fuel incoming.' },
+  OUT_FOR_DELIVERY: { label: 'Almost at your doorstep', line: 'Keep your code handy.' },
   DELIVERED: { label: 'Delivered', line: 'Worth staying awake for.' },
 };
 
@@ -371,7 +405,7 @@ export const STATUS_COPY: Record<OrderStatus, { label: string; line: string }> =
 export const TAKEAWAY_STATUS_COPY: Record<OrderStatus, { label: string; line: string }> = {
   ...STATUS_COPY,
   READY: { label: 'Ready for pickup', line: 'Come grab it — quote your code at the counter.' },
-  OUT_FOR_DELIVERY: { label: 'Waiting at the counter', line: 'Packed and holding for you.' },
+  OUT_FOR_DELIVERY: { label: 'Waiting at the counter', line: 'Quote your code to collect.' },
   DELIVERED: { label: 'Collected', line: 'Mission accomplished.' },
 };
 
@@ -399,13 +433,22 @@ function progressFromStatus(
   now: number,
 ): OrderProgress {
   const stepIndex = Math.max(0, ORDER_FLOW.indexOf(status));
-  const since = order.serverStatusAt ?? order.placedAt;
+  // Prefer the kitchen's own timestamp over when we happened to hear about it — polling adds up
+  // to five seconds of lag, and a countdown that loses five seconds at every phase change is a
+  // countdown the customer will catch being wrong.
+  const since =
+    status === 'PLACED' || status === 'ACCEPTED'
+      ? order.placedAt
+      : (order.statusChangedAt ?? order.serverStatusAt ?? order.placedAt);
 
-  // Typical dwell in the current step, used only to animate the bar. Capped at 1 so a slow step
-  // sits full rather than overflowing.
-  const expectedDwellMs = Math.max(30_000, (order.promisedAt - order.placedAt) / ORDER_FLOW.length);
+  const allowanceMs = PHASE_ETA_SECONDS[status] * 1000;
+  const elapsed = now - since;
+  // Clamped at zero rather than going negative. "0:00" while a rider is still climbing the stairs
+  // is a late order; "−3:41" is a broken app.
+  const secondsRemaining = Math.max(0, Math.round((allowanceMs - elapsed) / 1000));
+
   const stepProgress =
-    status === 'DELIVERED' ? 1 : Math.min(1, Math.max(0, (now - since) / expectedDwellMs));
+    status === 'DELIVERED' ? 1 : Math.min(1, Math.max(0, elapsed / Math.max(1, allowanceMs)));
 
   const reachedAt: Partial<Record<OrderStatus, number>> = { PLACED: order.placedAt };
   const span = Math.max(1, since - order.placedAt);
@@ -417,8 +460,10 @@ function progressFromStatus(
     status,
     stepIndex,
     stepProgress,
-    secondsRemaining: Math.max(0, Math.round((order.promisedAt - now) / 1000)),
-    isLate: now > order.promisedAt && status !== 'DELIVERED',
+    secondsRemaining,
+    // Late means the *current* phase has overrun its promise — which is what the customer is
+    // watching — not that some total set at checkout has elapsed.
+    isLate: secondsRemaining === 0 && status !== 'DELIVERED',
     reachedAt,
   };
 }

@@ -3,6 +3,7 @@
 import { Money } from '@juice-stop/core';
 import type { ApiOrder } from '@/lib/api';
 import { toPaise } from '@/lib/kitchen-api';
+import { OtpGate } from './otp-gate';
 
 /**
  * One ticket.
@@ -72,6 +73,7 @@ export function KitchenOrderCard({
   now,
   actions,
   undo,
+  otpGate,
   busy = false,
   blockedReason,
 }: {
@@ -79,6 +81,8 @@ export function KitchenOrderCard({
   now: number;
   actions: OrderAction[];
   undo?: UndoAction | null;
+  /** Supplied on orders awaiting handover — completion is gated on the customer's code. */
+  otpGate?: { label: string; onSubmit: (otp: string) => void } | null;
   busy?: boolean;
   blockedReason?: string | null;
 }) {
@@ -203,6 +207,10 @@ export function KitchenOrderCard({
         <p className="mt-3 text-center text-xs font-semibold text-[var(--color-text-tertiary)]">
           {blockedReason}
         </p>
+      )}
+
+      {otpGate !== null && otpGate !== undefined && (
+        <OtpGate onSubmit={otpGate.onSubmit} busy={busy} label={otpGate.label} />
       )}
 
       {undo !== null && undo !== undefined && (

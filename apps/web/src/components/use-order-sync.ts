@@ -51,8 +51,17 @@ export function useOrderSync(): void {
       await Promise.all(
         ids.map(async (id) => {
           try {
-            const order = await api.get<{ status: string }>(`/orders/${id}`);
-            if (!cancelled) syncFromServer(id, order.status as OrderStatus);
+            const order = await api.get<{ status: string; statusChangedAt?: string }>(
+              `/orders/${id}`,
+            );
+            if (cancelled) return;
+            // The kitchen's own timestamp, not ours. Polling adds up to five seconds of lag, and
+            // the countdown restarts from this instant.
+            const changedAt =
+              order.statusChangedAt !== undefined
+                ? new Date(order.statusChangedAt).getTime()
+                : undefined;
+            syncFromServer(id, order.status as OrderStatus, changedAt);
           } catch {
             // Offline, or the order is gone. The last known status stays on screen, which beats
             // blanking the thing the customer is watching.
