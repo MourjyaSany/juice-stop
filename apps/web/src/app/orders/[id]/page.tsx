@@ -16,6 +16,7 @@ import {
   type PlacedOrder,
 } from '@/store/orders';
 import { PickupCode } from '@/components/pickup-code';
+import { useOrderSync } from '@/components/use-order-sync';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { CheckIcon, ChevronLeftIcon, ClockIcon, EditIcon, MapPinIcon, PhoneIcon } from '@/components/icons';
 import { BillSummary } from '@/components/bill-summary';
@@ -39,6 +40,10 @@ export default function OrderTrackingPage() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Follow the kitchen. Stops once the order is delivered — polling a finished order forever is
+  // a battery drain that can never return new information.
+  useOrderSync(params.id, order !== undefined && order.serverStatus !== 'DELIVERED');
 
   if (!hydrated) {
     return (

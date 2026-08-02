@@ -8,6 +8,9 @@ import { HealthModule } from './core/health/health.module.js';
 import { AllExceptionsFilter } from './core/errors/all-exceptions.filter.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { OrderingModule } from './modules/ordering/ordering.module.js';
+import { EventsModule } from './core/events/events.module.js';
+import { KitchenModule } from './modules/kitchen/kitchen.module.js';
+import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js';
 
 /**
  * Root module.
@@ -24,7 +27,10 @@ import { OrderingModule } from './modules/ordering/ordering.module.js';
     DatabaseModule,
     CacheModule,
     HealthModule,
+    EventsModule,
     CatalogModule,
+    KitchenAuthModule,
+    KitchenModule,
     OrderingModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

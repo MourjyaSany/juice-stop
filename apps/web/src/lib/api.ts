@@ -72,7 +72,13 @@ export interface ApiOrder {
   orderNumber: string;
   businessDate: string;
   status: string;
-  address: Record<string, string>;
+  fulfilmentType: string;
+  /** Null for takeaway — there is nowhere to deliver, and an empty object would read as a
+      failed load rather than an absence. */
+  address: Record<string, string> | null;
+  pickupToken: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
   subtotalPaise: string;
   deliveryFeePaise: string;
   handlingFeePaise: string;

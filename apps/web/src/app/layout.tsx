@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { BottomNav } from '@/components/bottom-nav';
 import { MotionProvider } from '@/components/motion-provider';
+import { StorefrontLive } from '@/components/storefront-live';
 import './globals.css';
 
 /**
@@ -59,6 +60,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en-IN" suppressHydrationWarning>
       <body className={`${display.variable} ${sans.variable} ${mono.variable}`}>
         <MotionProvider>
+          {/* Renders nothing. Subscribes to kitchen availability so a sold-out item greys out
+              wherever it appears, without a refresh. */}
+          <StorefrontLive />
           {children}
           <BottomNav />
         </MotionProvider>

@@ -112,13 +112,35 @@ export interface PlacedOrder extends OrderTotalsSnapshot {
    */
   editableUntil: number;
   editCount: number;
+  /**
+   * The status the **kitchen** last reported, and when we heard it.
+   *
+   * Present once an order has been synced from the API. Its absence is meaningful: an order
+   * placed before the storefront talked to the server has no truth to show, and the simulated
+   * timeline below is all it will ever have.
+   */
+  serverStatus?: OrderStatus;
+  serverStatusAt?: number;
 }
 
 interface OrdersState {
   orders: PlacedOrder[];
   place: (
     order: Omit<PlacedOrder, 'id' | 'orderNumber' | 'otp' | 'editCount' | 'pickupToken'>,
+    /**
+     * Identity minted by the API. When present it *replaces* the client's guesses — the server's
+     * order number is the one the kitchen prints and the customer quotes, so two different
+     * numbers for one order is not a cosmetic problem.
+     */
+    serverIdentity?: {
+      id: string;
+      orderNumber: string;
+      otp: string;
+      pickupToken: string | null;
+    },
   ) => PlacedOrder;
+  /** Record the status the kitchen reported. The only writer of `serverStatus`. */
+  syncFromServer: (orderId: string, status: OrderStatus) => void;
   /** Apply an edit made during the grace window. Rejected once the window has shut. */
   applyEdit: (
     orderId: string,
@@ -164,19 +186,33 @@ export const useOrders = create<OrdersState>()(
     (set, get) => ({
       orders: [],
 
-      place: (draft) => {
+      place: (draft, serverIdentity) => {
         const placed: PlacedOrder = {
           ...draft,
-          id: `ord_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
-          orderNumber: orderNumber(draft.placedAt),
-          // 4-digit delivery OTP. Plain here only because there is no server yet; in production
-          // only a sha256 hash is stored and the rider verifies against it offline.
-          otp: String(Math.floor(Math.random() * 9000 + 1000)),
-          pickupToken: draft.fulfilmentType === 'TAKEAWAY' ? mintPickupToken() : null,
+          id: serverIdentity?.id ?? `ord_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+          orderNumber: serverIdentity?.orderNumber ?? orderNumber(draft.placedAt),
+          // 4-digit delivery OTP. The server mints the real one and stores only its hash; the
+          // local fallback exists solely for the offline path below.
+          otp: serverIdentity?.otp ?? String(Math.floor(Math.random() * 9000 + 1000)),
+          pickupToken:
+            serverIdentity !== undefined
+              ? serverIdentity.pickupToken
+              : draft.fulfilmentType === 'TAKEAWAY'
+                ? mintPickupToken()
+                : null,
           editCount: 0,
+          ...(serverIdentity !== undefined ? { serverStatus: 'PLACED' as const, serverStatusAt: Date.now() } : {}),
         };
         set((s) => ({ orders: [placed, ...s.orders] }));
         return placed;
+      },
+
+      syncFromServer: (orderId, status) => {
+        set((s) => ({
+          orders: s.orders.map((o) =>
+            o.id === orderId ? { ...o, serverStatus: status, serverStatusAt: Date.now() } : o,
+          ),
+        }));
       },
 
       applyEdit: (orderId, next) => {
@@ -250,6 +286,16 @@ export interface OrderProgress {
 export function orderProgress(order: PlacedOrder, now = Date.now()): OrderProgress {
   const window = editWindow(order, now);
 
+  // The kitchen's word beats the clock.
+  //
+  // Everything below this block is a *simulation* — a plausible timeline inferred from the
+  // promised time. It exists for orders placed before the storefront talked to the API, and it is
+  // only ever a guess. Once a real status has been reported, showing anything else would mean
+  // telling a customer their food is cooking while the cook has it sitting on the pass.
+  if (order.serverStatus !== undefined) {
+    return progressFromStatus(order, order.serverStatus, now);
+  }
+
   if (window.open) {
     return {
       status: 'ACCEPTED',
@@ -320,3 +366,45 @@ export const statusCopyFor = (fulfilment: FulfilmentType) =>
 
 /** Parse a persisted paise string back into branded money. */
 export const toPaise = (s: string): Paise => Money.paise(BigInt(s));
+
+/**
+ * Timeline for an order whose status the kitchen has actually reported.
+ *
+ * The step is a fact, so it is used directly. Only the *within-step* progress bar is interpolated,
+ * because there is no third data point between "the cook pressed Preparing" and "the cook pressed
+ * Ready" — and a bar frozen at 0% until it jumps to 100% reads as a hung screen.
+ *
+ * `reachedAt` is reconstructed rather than recorded per step: the customer app learns of a
+ * transition when it next polls, so stamping the observation time would drift a few seconds later
+ * than the truth every time. Spacing the completed steps across the real elapsed window is closer
+ * to what happened than timestamps we did not witness.
+ */
+function progressFromStatus(
+  order: PlacedOrder,
+  status: OrderStatus,
+  now: number,
+): OrderProgress {
+  const stepIndex = Math.max(0, ORDER_FLOW.indexOf(status));
+  const since = order.serverStatusAt ?? order.placedAt;
+
+  // Typical dwell in the current step, used only to animate the bar. Capped at 1 so a slow step
+  // sits full rather than overflowing.
+  const expectedDwellMs = Math.max(30_000, (order.promisedAt - order.placedAt) / ORDER_FLOW.length);
+  const stepProgress =
+    status === 'DELIVERED' ? 1 : Math.min(1, Math.max(0, (now - since) / expectedDwellMs));
+
+  const reachedAt: Partial<Record<OrderStatus, number>> = { PLACED: order.placedAt };
+  const span = Math.max(1, since - order.placedAt);
+  for (let i = 1; i <= stepIndex; i++) {
+    reachedAt[ORDER_FLOW[i]!] = Math.round(order.placedAt + (span * i) / Math.max(1, stepIndex));
+  }
+
+  return {
+    status,
+    stepIndex,
+    stepProgress,
+    secondsRemaining: Math.max(0, Math.round((order.promisedAt - now) / 1000)),
+    isLate: now > order.promisedAt && status !== 'DELIVERED',
+    reachedAt,
+  };
+}

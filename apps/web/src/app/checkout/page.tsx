@@ -16,6 +16,7 @@ import {
 import { checkProfileReadiness, useProfile } from '@/store/profile';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { estimateEtaSeconds, snapshotLines, snapshotTotals } from '@/lib/order-builder';
+import { ApiError, api, type ApiOrder } from '@/lib/api';
 import { FulfilmentToggle } from '@/components/checkout/fulfilment-toggle';
 import { CheckoutExtras } from '@/components/checkout/extras';
 import { BillSummary } from '@/components/bill-summary';
@@ -48,6 +49,7 @@ export default function CheckoutPage() {
   const [method, setMethod] = useState<PaymentMethod>('UPI');
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
+  const [placeError, setPlaceError] = useState<string | null>(null);
 
   const takeaway = fulfilment === 'TAKEAWAY';
   const selectedAddress =
@@ -72,15 +74,16 @@ export default function CheckoutPage() {
     !totals.meetsMinimum ||
     !status.acceptingOrders;
 
-  const placeOrder = () => {
+  const placeOrder = async () => {
     if (blocked || placing) return;
     setPlacing(true);
+    setPlaceError(null);
 
     const placedAt = Date.now();
     const etaSeconds = estimateEtaSeconds(totals.prepSeconds, status.capacityLoad, fulfilment);
     const editableUntil = placedAt + EDIT_WINDOW_MS;
 
-    const order = place({
+    const draft = {
       businessDate: toBusinessDate(new Date(placedAt)),
       placedAt,
       editableUntil,
@@ -104,7 +107,65 @@ export default function CheckoutPage() {
               contactPhone: selectedAddress.contactPhone,
             },
       ...snapshotTotals(totals),
-    });
+    };
+
+    // Send it to the kitchen.
+    //
+    // This is the whole reason the order exists on a server at all: the API prices the lines from
+    // the database (never from the client), mints the order number, OTP and pickup token, and
+    // puts the ticket on the kitchen board. The local record below is for *tracking* — it is not
+    // the order.
+    let identity: { id: string; orderNumber: string; otp: string; pickupToken: string | null } | undefined;
+    try {
+      const response = await api.post<{ order: ApiOrder; otp: string; pickupToken: string | null }>(
+        '/orders',
+        {
+          fulfilmentType: fulfilment,
+          paymentMethod: method,
+          ...(note.trim().length > 0 ? { customerNote: note.trim() } : {}),
+          ...(profile.fullName.trim().length > 0 ? { customerName: profile.fullName.trim() } : {}),
+          ...(takeaway || selectedAddress === null
+            ? {}
+            : {
+                address: {
+                  label: selectedAddress.label,
+                  block: selectedAddress.block,
+                  flatOrRoom: selectedAddress.flatOrRoom,
+                  ...(selectedAddress.floor !== '' ? { floor: selectedAddress.floor } : {}),
+                  ...(selectedAddress.landmark !== '' ? { landmark: selectedAddress.landmark } : {}),
+                  contactName: selectedAddress.contactName,
+                  contactPhone: selectedAddress.contactPhone,
+                },
+              }),
+          lines: totals.lines.map((line) => ({
+            itemId: line.item.id,
+            variantId: line.variant.id,
+            addOnIds: line.line.addOnIds,
+            quantity: line.line.quantity,
+            ...(line.line.note !== '' ? { note: line.line.note } : {}),
+          })),
+        },
+      );
+      identity = {
+        id: response.order.id,
+        orderNumber: response.order.orderNumber,
+        otp: response.otp,
+        pickupToken: response.pickupToken,
+      };
+    } catch (cause) {
+      // Stop here rather than falling back to a local-only order. A "placed" order the kitchen
+      // never received is the worst possible outcome — the customer waits for food nobody is
+      // cooking. Better to say so and let them retry.
+      setPlaceError(
+        cause instanceof ApiError
+          ? cause.message
+          : 'Could not reach the kitchen. Check your connection and try again.',
+      );
+      setPlacing(false);
+      return;
+    }
+
+    const order = place(draft, identity);
 
     clearCart();
     router.push(`/orders/${order.id}/confirmation`);
@@ -415,12 +476,22 @@ export default function CheckoutPage() {
           </p>
         )}
 
+        {placeError !== null && (
+          <p
+            role="alert"
+            className="mt-6 rounded-[13px] px-4 py-3 text-sm"
+            style={{ background: 'rgb(239 68 68 / 0.12)', color: 'var(--color-danger)' }}
+          >
+            {placeError}
+          </p>
+        )}
+
         <div className="mt-7">
           <TactileButton
             size="lg"
             className="w-full"
             disabled={blocked || placing}
-            onClick={placeOrder}
+            onClick={() => void placeOrder()}
           >
             {placing ? (
               'Placing…'

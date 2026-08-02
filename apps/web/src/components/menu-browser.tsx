@@ -15,6 +15,7 @@ import {
 } from '@/data/menu';
 import { priceCart, useCart } from '@/store/cart';
 import { assetForItem } from '@/data/assets';
+import { useIsSoldOut, useStockLeft } from '@/components/storefront-live';
 import { ItemSheet } from './item-sheet';
 import { FloatingCart } from './floating-cart';
 import { CartDrawer } from './cart-drawer';
@@ -336,7 +337,12 @@ function ItemCard({
   onIncrement: () => void;
   onDecrement: () => void;
 }) {
-  const soldOut = !item.inStock;
+  // Two sources, one meaning. `item.inStock` is the build-time catalogue default; the live flag
+  // is what the kitchen has decided tonight and always wins. Everything downstream — the grey
+  // wash, the disabled stepper, the "Sold out" pill — already keys off this one boolean.
+  const liveSoldOut = useIsSoldOut(item.id);
+  const stockLeft = useStockLeft(item.id);
+  const soldOut = !item.inStock || liveSoldOut;
   const disabled = !acceptingOrders || soldOut;
   const choices = hasChoices(item);
   const inCart = quantity > 0;
@@ -432,6 +438,17 @@ function ItemCard({
               {TAG_LABELS[tag] ?? tag}
             </span>
           ))}
+
+          {/* Scarcity, but only when it is real — the count comes from the kitchen, not from a
+              growth tactic. Shown at five or fewer because that is where it changes a decision. */}
+          {!soldOut && stockLeft !== null && stockLeft <= 5 && (
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+              style={{ background: 'rgb(245 158 11 / 0.18)', color: 'var(--color-warning)' }}
+            >
+              Only {stockLeft} left
+            </span>
+          )}
         </div>
       </div>
 

@@ -2,6 +2,8 @@ import { createHash, randomInt } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Money, toBusinessDate, COMMERCIAL_TERMS, type Paise } from '@juice-stop/core';
 import { PrismaService } from '../../core/database/prisma.service.js';
+import { RealtimeService } from '../../core/events/realtime.service.js';
+import { InventoryService } from '../kitchen/inventory.service.js';
 import {
   ConflictError,
   ErrorCode,
@@ -51,6 +53,9 @@ export interface PlaceOrderInput {
   paymentMethod: PaymentMethod;
   customerNote?: string;
   userId?: string;
+  /** Shown on the kitchen ticket. Falls back to the delivery contact for delivery orders. */
+  customerName?: string | undefined;
+  customerPhone?: string | undefined;
 }
 
 interface PricedLine {
@@ -68,7 +73,11 @@ interface PricedLine {
 
 @Injectable()
 export class OrderingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeService,
+    private readonly inventory: InventoryService,
+  ) {}
 
   /**
    * Price a set of lines **from the database**.
@@ -219,6 +228,10 @@ export class OrderingService {
           editableUntil,
           promisedAt,
           prepSeconds: totals.prepSeconds,
+          // The address contact is the fallback rather than the source: takeaway has no address,
+          // and the kitchen must never have to parse an address blob to read a name off a ticket.
+          customerName: input.customerName ?? input.address?.contactName ?? null,
+          customerPhone: input.customerPhone ?? input.address?.contactPhone ?? null,
           customerNote: input.customerNote ?? null,
           // Only the hash is stored — the plaintext goes to the customer and nowhere else.
           otpHash: sha256(otp),
@@ -254,8 +267,17 @@ export class OrderingService {
       return created;
     });
 
+    // Both of these run *after* the commit, deliberately. An outbox row inside the transaction is
+    // what guarantees the event is not lost (ADR-006); this is the fast path that makes the
+    // kitchen light up immediately, and it must never be able to roll the order back.
+    const serialised = serialiseOrder(order);
+    this.realtime.publish('order.placed', order.id, { order: serialised });
+    await this.inventory.consume(
+      priced.map((p) => ({ productId: p.productId, quantity: p.quantity })),
+    );
+
     // OTP and pickup token are returned once, here, and never stored in plaintext or re-served.
-    return { order: serialiseOrder(order), otp, pickupToken };
+    return { order: serialised, otp, pickupToken };
   }
 
   /** Apply an edit inside the grace window. */
@@ -348,6 +370,25 @@ export class OrderingService {
     return orders.map(serialiseOrder);
   }
 
+  /**
+   * Tonight's finished orders, newest first.
+   *
+   * Keyed on `businessDate` rather than a timestamp range, so the list does not reset at midnight
+   * in the middle of a shift (ADR-010).
+   */
+  async kitchenCompleted(limit = 40) {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        businessDate: toBusinessDate(new Date()),
+        status: { in: ['OUT_FOR_DELIVERY', 'DELIVERED', 'REJECTED', 'CANCELLED'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      include: { items: true },
+    });
+    return orders.map(serialiseOrder);
+  }
+
   /** Move an order through the lifecycle. The only path that writes `status`. */
   async transition(orderId: string, to: OrderStatus, actor: ActorRole, reason?: string) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
@@ -402,7 +443,14 @@ export class OrderingService {
       return next;
     });
 
-    return serialiseOrder(updated);
+    const serialised = serialiseOrder(updated);
+    this.realtime.publish('order.status_changed', orderId, {
+      order: serialised,
+      from: order.status,
+      to,
+      actor,
+    });
+    return serialised;
   }
 }
 
@@ -451,6 +499,8 @@ function serialiseOrder(order: {
   promisedAt: Date;
   prepSeconds: number;
   editCount: number;
+  customerName: string | null;
+  customerPhone: string | null;
   customerNote: string | null;
   items?: Array<{
     nameSnapshot: string;
@@ -487,6 +537,8 @@ function serialiseOrder(order: {
     promisedAt: order.promisedAt.toISOString(),
     prepSeconds: order.prepSeconds,
     editCount: order.editCount,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
     customerNote: order.customerNote,
     items: (order.items ?? []).map((i) => ({
       name: i.nameSnapshot,

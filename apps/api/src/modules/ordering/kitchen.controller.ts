@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { OrderingService } from './ordering.service.js';
 import { ValidationError } from '../../core/errors/app-error.js';
+import { KitchenAuthGuard } from '../kitchen-auth/kitchen-auth.guard.js';
 
 const RejectSchema = z.object({
   reason: z.enum(['OUT_OF_STOCK', 'TOO_BUSY', 'CLOSING_SOON', 'ITEM_ISSUE']),
@@ -14,10 +15,12 @@ const RejectSchema = z.object({
  * and the state machine — the controller decides *what* was asked for, never *whether it is
  * legal*. That check lives in one place and cannot be skipped by adding a new endpoint.
  *
- * Auth: currently open. RBAC (`kitchen:*` permissions) lands with M1's identity module; this is
- * flagged rather than quietly ignored.
+ * Auth: `KitchenAuthGuard`, applied to the whole controller so a new endpoint cannot ship
+ * unauthenticated by omission. The guard currently sits on development credentials — see
+ * `modules/kitchen-auth` — and swapping in real RBAC replaces that module and nothing here.
  */
 @Controller('kitchen')
+@UseGuards(KitchenAuthGuard)
 export class KitchenController {
   constructor(private readonly ordering: OrderingService) {}
 
@@ -25,6 +28,19 @@ export class KitchenController {
   @Get('queue')
   async queue() {
     const orders = await this.ordering.kitchenQueue();
+    return { orders, serverTime: new Date().toISOString() };
+  }
+
+  /**
+   * Tonight's finished orders — the dashboard's Completed column.
+   *
+   * Scoped to the business date and capped, because "completed" grows all night and the board
+   * only ever shows the tail of it. Unbounded, this endpoint would get slower every hour of a
+   * shift, which is the opposite of what a kitchen screen needs.
+   */
+  @Get('completed')
+  async completed() {
+    const orders = await this.ordering.kitchenCompleted();
     return { orders, serverTime: new Date().toISOString() };
   }
 

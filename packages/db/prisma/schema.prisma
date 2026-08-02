@@ -202,7 +202,13 @@ model Product {
   prepTimeSeconds Int       @default(420) @map("prep_time_seconds")
   /// JSON array of tag strings — SQLite has no native arrays.
   tagsJson        String    @default("[]") @map("tags_json")
+  /// The kitchen's availability switch. False = the customer sees "Sold out".
   inStock         Boolean   @default(true) @map("in_stock")
+  /// Remaining portions. NULL means unlimited — the common case, and the reason this is nullable
+  /// rather than a sentinel like -1 that every read would have to remember to special-case.
+  /// Reaching 0 flips `inStock` false; the two are kept consistent in one service method so they
+  /// cannot disagree.
+  stockRemaining  Int?      @map("stock_remaining")
   sortOrder       Int       @default(0) @map("sort_order")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -290,6 +296,12 @@ model Order {
   /// The honest ETA we grade ourselves against.
   promisedAt    DateTime @map("promised_at")
   deliveredAt   DateTime? @map("delivered_at")
+
+  /// Who to call out when the bag is ready. For delivery this duplicates the address contact by
+  /// design — the kitchen must not have to parse an address blob to read a name off a ticket, and
+  /// takeaway has no address at all.
+  customerName String? @map("customer_name")
+  customerPhone String? @map("customer_phone")
 
   prepSeconds  Int    @default(0) @map("prep_seconds")
   editCount    Int    @default(0) @map("edit_count")

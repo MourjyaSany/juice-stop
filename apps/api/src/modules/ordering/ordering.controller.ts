@@ -34,6 +34,10 @@ const PlaceOrderSchema = z
     paymentMethod: z.enum(['UPI', 'CARD', 'NETBANKING', 'WALLET']),
     customerNote: z.string().max(140).optional(),
     userId: z.string().optional(),
+    // Takeaway has no address to borrow a name from, and a ticket with no name is a bag nobody
+    // can be called up for.
+    customerName: z.string().min(1).max(60).optional(),
+    customerPhone: z.string().regex(/^[6-9]\d{9}$/).optional(),
   })
   // Address is required for delivery and rejected for takeaway. Enforced here rather than in the
   // service so a malformed request never reaches the pricing path at all.
@@ -73,6 +77,8 @@ export class OrderingController {
       paymentMethod: input.paymentMethod,
       ...(input.customerNote !== undefined ? { customerNote: input.customerNote } : {}),
       ...(input.userId !== undefined ? { userId: input.userId } : {}),
+      ...(input.customerName !== undefined ? { customerName: input.customerName } : {}),
+      ...(input.customerPhone !== undefined ? { customerPhone: input.customerPhone } : {}),
     });
   }
 
