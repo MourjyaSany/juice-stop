@@ -43,7 +43,41 @@ const TRANSITIONS: Transition[] = [
 
   { from: 'READY', to: 'OUT_FOR_DELIVERY', actors: ['RIDER', 'ADMIN'] },
   { from: 'OUT_FOR_DELIVERY', to: 'DELIVERED', actors: ['RIDER', 'ADMIN'] },
+
+  /* ── Undo ─────────────────────────────────────────────────────────────────────────────────
+     A wall-mounted tablet gets knocked, and a greasy thumb lands on "Mark ready" for the wrong
+     ticket. Without a way back the only remedies are a wrong order going out or someone editing
+     the database, so stepping backwards is modelled as a real transition rather than left as an
+     accident with no remedy.
+
+     Each one is the exact inverse of a forward move, and every one still writes an audit row —
+     an undo is a fact about the shift, not an erasure of one.
+
+     Deliberately absent: REJECTED and CANCELLED have no way back. Both settle money, and a
+     "resurrected" refunded order is a far worse problem than re-entering one. */
+  { from: 'ACCEPTED', to: 'PLACED', actors: ['KITCHEN', 'ADMIN'] },
+  { from: 'PREPARING', to: 'ACCEPTED', actors: ['KITCHEN', 'ADMIN'] },
+  { from: 'READY', to: 'PREPARING', actors: ['KITCHEN', 'ADMIN'] },
+  { from: 'OUT_FOR_DELIVERY', to: 'READY', actors: ['KITCHEN', 'ADMIN'] },
+  { from: 'DELIVERED', to: 'OUT_FOR_DELIVERY', actors: ['KITCHEN', 'ADMIN'] },
 ];
+
+/**
+ * The step back from each status, for the dashboard's undo control.
+ *
+ * Derived here rather than in the controller so "what is the previous phase" has exactly one
+ * answer, and adding a lifecycle step cannot leave undo pointing at the wrong place.
+ */
+const PREVIOUS: Partial<Record<OrderStatus, OrderStatus>> = {
+  ACCEPTED: 'PLACED',
+  PREPARING: 'ACCEPTED',
+  READY: 'PREPARING',
+  OUT_FOR_DELIVERY: 'READY',
+  DELIVERED: 'OUT_FOR_DELIVERY',
+};
+
+export const previousStatus = (status: string): OrderStatus | undefined =>
+  PREVIOUS[status as OrderStatus];
 
 export interface TransitionResult {
   ok: boolean;

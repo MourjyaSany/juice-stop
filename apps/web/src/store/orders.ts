@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Money, type Paise } from '@juice-stop/core';
+import { api } from '@/lib/api';
 import type { CartLine } from './cart';
 
 /**
@@ -229,12 +230,25 @@ export const useOrders = create<OrdersState>()(
         return true;
       },
 
-      confirmNow: (orderId) =>
+      confirmNow: (orderId) => {
+        // Local first, so the countdown disappears the instant it is tapped.
         set((s) => ({
           orders: s.orders.map((o) =>
             o.id === orderId ? { ...o, editableUntil: Date.now() } : o,
           ),
-        })),
+        }));
+
+        // Then tell the server, which is the copy that actually matters. The kitchen is blocked
+        // from starting until the *server's* window shuts, so without this the cook would keep
+        // staring at a countdown for an order the customer has already committed to. Locally
+        // minted ids predate the API and have nothing to confirm against.
+        if (!orderId.startsWith('ord_')) {
+          void api.post(`/orders/${orderId}/confirm-now`).catch(() => {
+            // The window lapses on its own within ten minutes either way, so a failure here costs
+            // a wait rather than correctness — not worth an error banner over.
+          });
+        }
+      },
 
       clear: () => set({ orders: [] }),
     }),

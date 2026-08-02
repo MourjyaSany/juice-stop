@@ -59,6 +59,17 @@ export class KitchenController {
     return this.ordering.transition(id, 'READY', 'KITCHEN');
   }
 
+  /**
+   * Step an order back one phase.
+   *
+   * A single endpoint rather than one per pair: the previous phase is a property of the order's
+   * current status, so letting the client name a target would be letting it get that wrong.
+   */
+  @Post('orders/:id/undo')
+  async undo(@Param('id') id: string) {
+    return this.ordering.revert(id, 'KITCHEN');
+  }
+
   @Post('orders/:id/reject')
   async reject(@Param('id') id: string, @Body() body: unknown) {
     const parsed = RejectSchema.safeParse(body);

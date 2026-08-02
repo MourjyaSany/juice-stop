@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, type ApiOrder } from '@/lib/api';
 import { kitchen, type KitchenStats, type RealtimeEnvelope } from '@/lib/kitchen-api';
 import { KitchenShell } from '@/components/kitchen/shell';
-import { KitchenOrderCard, type OrderAction } from '@/components/kitchen/order-card';
+import { KitchenOrderCard, type OrderAction, type UndoAction } from '@/components/kitchen/order-card';
 import { useKitchenStream, useNow } from '@/components/kitchen/use-kitchen-stream';
 import { useChime } from '@/components/kitchen/use-chime';
 
@@ -20,6 +20,21 @@ import { useChime } from '@/components/kitchen/use-chime';
  */
 
 const RECONCILE_MS = 15_000;
+
+/**
+ * What the step-back control returns an order to.
+ *
+ * Mirrors the server's `previousStatus`, and only for the labels — the server decides the actual
+ * target. Absent keys are the statuses with no way back: a rejected or cancelled order has
+ * settled money against it, and resurrecting one is a worse problem than re-entering it.
+ */
+const PREVIOUS_LABEL: Record<string, string> = {
+  ACCEPTED: 'Incoming',
+  PREPARING: 'Accepted',
+  READY: 'Preparing',
+  OUT_FOR_DELIVERY: 'Ready',
+  DELIVERED: 'Out for delivery',
+};
 
 type ColumnId = 'incoming' | 'preparing' | 'ready' | 'completed';
 
@@ -113,6 +128,13 @@ export default function KitchenDashboardPage() {
     }
     return map;
   }, [queue, completed]);
+
+  /** The step back, offered only where the server has one to give. */
+  const undoFor = (order: ApiOrder): UndoAction | null => {
+    const label = PREVIOUS_LABEL[order.status];
+    if (label === undefined) return null;
+    return { toLabel: label, onClick: () => void act(order.id, () => kitchen.undo(order.id)) };
+  };
 
   /**
    * Available actions come from the order's current status, so the board can only offer moves the
@@ -239,6 +261,7 @@ export default function KitchenDashboardPage() {
                       order={order}
                       now={now}
                       actions={actions}
+                      undo={undoFor(order)}
                       busy={busyId === order.id}
                       blockedReason={blocked}
                     />

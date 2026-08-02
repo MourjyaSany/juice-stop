@@ -11,7 +11,14 @@ import {
   UnprocessableError,
   ValidationError,
 } from '../../core/errors/app-error.js';
-import { canTransition, isTerminal, KITCHEN_ACTIVE, type ActorRole, type OrderStatus } from './order-state-machine.js';
+import {
+  canTransition,
+  isTerminal,
+  previousStatus,
+  KITCHEN_ACTIVE,
+  type ActorRole,
+  type OrderStatus,
+} from './order-state-machine.js';
 
 export const EDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -387,6 +394,76 @@ export class OrderingService {
       include: { items: true },
     });
     return orders.map(serialiseOrder);
+  }
+
+  /**
+   * Step an order back one phase.
+   *
+   * Routed through `transition` like every other move, so an undo is subject to the same legality
+   * check and writes the same audit row. It is a correction, not an erasure — "READY at 01:12,
+   * back to PREPARING at 01:12" is exactly the history a shift review needs to see.
+   */
+  async revert(orderId: string, actor: ActorRole) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true },
+    });
+    if (order === null) throw new NotFoundError('Order not found.');
+
+    const target = previousStatus(order.status);
+    if (target === undefined) {
+      throw new ConflictError(
+        ErrorCode.ORDER_TRANSITION_INVALID,
+        `A ${order.status.toLowerCase()} order cannot be moved back.`,
+        { meta: { currentStatus: order.status } },
+      );
+    }
+
+    return this.transition(orderId, target, actor, 'UNDO');
+  }
+
+  /**
+   * Customer closes their own edit window early — "I'm sure, cook it now".
+   *
+   * The kitchen is blocked from starting while an order can still change, and that block is
+   * enforced server-side. So a customer confirming early has to move the server's deadline, not
+   * just the one in their browser; otherwise the cook keeps staring at a countdown for an order
+   * the customer has already committed to.
+   */
+  async confirmNow(orderId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (order === null) throw new NotFoundError('Order not found.');
+    if (isTerminal(order.status)) {
+      throw new ConflictError(ErrorCode.ORDER_TRANSITION_INVALID, 'This order is already closed.');
+    }
+
+    const now = new Date();
+    // Idempotent: confirming twice, or after the window has lapsed on its own, is a no-op rather
+    // than an error. A double-tap on a phone must not produce a red banner.
+    if (order.editableUntil.getTime() <= now.getTime()) {
+      return serialiseOrder(
+        await this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } }),
+      );
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { editableUntil: now, version: { increment: 1 } },
+      include: { items: true },
+    });
+
+    const serialised = serialiseOrder(updated);
+    // Status has not changed, but what the kitchen may *do* has. Without this the board would sit
+    // on a stale countdown until its next 15-second reconcile.
+    this.realtime.publish('order.status_changed', orderId, {
+      order: serialised,
+      from: order.status,
+      to: order.status,
+      actor: 'CUSTOMER',
+      reason: 'EDIT_WINDOW_CLOSED',
+    });
+
+    return serialised;
   }
 
   /** Move an order through the lifecycle. The only path that writes `status`. */

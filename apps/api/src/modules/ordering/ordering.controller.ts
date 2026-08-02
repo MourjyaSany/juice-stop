@@ -82,6 +82,17 @@ export class OrderingController {
     });
   }
 
+  /**
+   * "Cook it now" — the customer closes their own edit window early.
+   *
+   * Not a status transition, so it does not go through the state machine: nothing about where the
+   * order *is* changes, only whether the kitchen is still holding for edits.
+   */
+  @Post(':id/confirm-now')
+  async confirmNow(@Param('id') id: string) {
+    return this.ordering.confirmNow(id);
+  }
+
   @Get()
   async list(@Query('userId') userId?: string) {
     return { orders: await this.ordering.listOrders(userId) };

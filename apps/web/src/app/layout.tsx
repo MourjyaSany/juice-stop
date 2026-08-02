@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { BottomNav } from '@/components/bottom-nav';
 import { MotionProvider } from '@/components/motion-provider';
 import { StorefrontLive } from '@/components/storefront-live';
+import { OrderSync } from '@/components/use-order-sync';
 import './globals.css';
 
 /**
@@ -63,6 +64,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Renders nothing. Subscribes to kitchen availability so a sold-out item greys out
               wherever it appears, without a refresh. */}
           <StorefrontLive />
+          {/* Also renders nothing. Keeps every live order in step with the kitchen, so the home
+              screen tab, the orders list, the nav badge and the tracking page all move together. */}
+          <OrderSync />
           {children}
           <BottomNav />
         </MotionProvider>

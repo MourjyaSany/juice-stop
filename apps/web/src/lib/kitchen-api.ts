@@ -118,6 +118,7 @@ export const kitchen = {
   dispatch: (id: string) =>
     request<ApiOrder>(`/kitchen/orders/${id}/out-for-delivery`, { method: 'POST' }),
   delivered: (id: string) => request<ApiOrder>(`/kitchen/orders/${id}/delivered`, { method: 'POST' }),
+  undo: (id: string) => request<ApiOrder>(`/kitchen/orders/${id}/undo`, { method: 'POST' }),
   reject: (id: string, reason: string) =>
     request<ApiOrder>(`/kitchen/orders/${id}/reject`, {
       method: 'POST',

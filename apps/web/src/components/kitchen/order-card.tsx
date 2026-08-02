@@ -55,16 +55,30 @@ export interface OrderAction {
   tone?: 'primary' | 'quiet' | 'danger';
 }
 
+/**
+ * Step-back control.
+ *
+ * Deliberately small, unlabelled-by-default and set apart from the forward actions. Undo exists
+ * for the mis-tap, so it must be reachable in one touch — but a button the same size and weight
+ * as "Mark ready" sitting next to it is how the *next* mis-tap happens.
+ */
+export interface UndoAction {
+  toLabel: string;
+  onClick: () => void;
+}
+
 export function KitchenOrderCard({
   order,
   now,
   actions,
+  undo,
   busy = false,
   blockedReason,
 }: {
   order: ApiOrder;
   now: number;
   actions: OrderAction[];
+  undo?: UndoAction | null;
   busy?: boolean;
   blockedReason?: string | null;
 }) {
@@ -189,6 +203,19 @@ export function KitchenOrderCard({
         <p className="mt-3 text-center text-xs font-semibold text-[var(--color-text-tertiary)]">
           {blockedReason}
         </p>
+      )}
+
+      {undo !== null && undo !== undefined && (
+        <button
+          type="button"
+          onClick={undo.onClick}
+          disabled={busy}
+          title={`Move this order back to ${undo.toLabel}`}
+          className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-[10px] text-xs font-semibold transition-colors duration-150 disabled:opacity-40"
+          style={{ background: 'var(--color-inset)', color: 'var(--color-text-tertiary)' }}
+        >
+          <span aria-hidden>↶</span> Back to {undo.toLabel}
+        </button>
       )}
 
       {actions.length > 0 && (
