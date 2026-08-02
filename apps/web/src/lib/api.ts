@@ -7,7 +7,15 @@
 
 import { Money, type Paise } from '@juice-stop/core';
 
-const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000/api/v1';
+/**
+ * Relative by default.
+ *
+ * The web server proxies `/api/v1/*` to the API (see next.config.ts), so the browser never needs
+ * to know where the API lives. That is what lets the same build work on a laptop, a phone over the
+ * LAN, a tunnel and a real deployment — an absolute `localhost` here means "the device holding the
+ * screen", which is wrong everywhere except the developer's own machine.
+ */
+const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
 
 export class ApiError extends Error {
   constructor(

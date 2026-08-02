@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { useEffect } from 'react';
 
-const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000/api/v1';
+const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
 
 /**
  * Live menu availability on the customer side.

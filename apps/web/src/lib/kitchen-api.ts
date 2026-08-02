@@ -10,7 +10,8 @@
 import { Money, type Paise } from '@juice-stop/core';
 import { ApiError, type ApiOrder } from './api';
 
-const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000/api/v1';
+/** Relative, for the same reason as `lib/api.ts` — the web server proxies to the API. */
+const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
 
 /**
  * sessionStorage, not localStorage.
