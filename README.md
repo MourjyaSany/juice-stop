@@ -11,26 +11,49 @@ throughout.
 
 ## Quick start
 
+**One command.** It provisions pnpm, installs everything, writes `.env`, creates and seeds the
+database, then starts both servers.
+
+**macOS / Linux / Git Bash**
+
 ```bash
-# 1. Prerequisites: Node 24+, pnpm 11+  (corepack enable && corepack prepare pnpm@latest --activate)
-pnpm install
-
-# 2. Environment
-cp .env.example .env          # dev defaults work as-is; no external accounts needed
-
-# 3. Database — SQLite, a single file. No Docker, no server.
-pnpm db:migrate               # creates packages/db/prisma/dev.db
-pnpm db:seed                  # 194 menu items, 25 categories, settings, a demo customer
-
-# 4. Run
-pnpm dev
+git clone https://github.com/MourjyaSany/juice-stop.git && cd juice-stop && node scripts/bootstrap.mjs
 ```
+
+**Windows PowerShell**
+
+```powershell
+git clone https://github.com/MourjyaSany/juice-stop.git; cd juice-stop; node scripts/bootstrap.mjs
+```
+
+The only things you need beforehand are **git** and **Node 24+** ([nodejs.org](https://nodejs.org)).
+pnpm is installed for you at the exact pinned version. There is no Docker, no database server, no
+API keys and no accounts to create — SQLite is a single file and every default in `.env.example`
+works as-is.
 
 | Surface | URL | What it is |
 |---|---|---|
 | **Customer app** | http://localhost:3100 | Storefront — browse, cart, checkout, live tracking |
 | **Kitchen board** | http://localhost:3100/kitchen | Staff queue: accept → cook → ready |
 | **API** | http://localhost:3000/api/v1 | REST. `/health/ready` should report `database: up` |
+
+Re-running the command later is safe: it reinstalls, re-applies migrations and starts the servers,
+but leaves an existing database alone — seeding truncates every table, so it is never automatic
+once the database exists. `pnpm bootstrap:only` stops after setup instead of starting the servers.
+
+<details>
+<summary>Prefer to run the steps yourself?</summary>
+
+```bash
+corepack enable && corepack prepare --activate   # pnpm 11, pinned by package.json
+pnpm install
+cp .env.example .env                             # dev defaults work as-is
+pnpm db:migrate                                  # creates packages/db/prisma/dev.db
+pnpm db:seed                                     # 197 items, 26 categories, a demo customer
+pnpm dev                                         # both servers
+```
+
+</details>
 
 > Browsing works 24/7. **Ordering is gated to 19:00–04:00 IST** — that is the business rule, not a
 > bug. Outside those hours the menu is fully browsable and the order buttons explain why they are
@@ -46,15 +69,19 @@ apps/
   api/         NestJS · REST, order state machine, three process roles
 packages/
   core/        Pure domain primitives — money, business dates, store hours, pricing rules
+  menu/        The catalogue — one source of truth for the storefront and the DB seed
   db/          Prisma schema, migrations, seed
   config/      Shared tsconfig / ESLint presets
 docs/          Architecture, ERD, API spec, design system, roadmap, ADRs
+scripts/       bootstrap.mjs — the one-command setup
+tools/         extract-burger-sprites.py — cuts the hero burger layers from the sprite sheet
 ```
 
 ## Commands
 
 | Command | Does |
 |---|---|
+| `pnpm bootstrap` | Full setup from scratch, then run both servers |
 | `pnpm dev` | All apps in watch mode |
 | `pnpm build` | Build everything |
 | `pnpm typecheck` | Strict TS across the workspace |
@@ -109,6 +136,14 @@ Prompts live in `apps/web/src/data/assets.ts` behind a shared house-style string
 comes from reusing it verbatim. The script has a provider seam, so swapping generators is one
 function and no component changes.
 
+The landing hero is different: it is a scroll-assembled burger built from eleven ingredient
+cut-outs in `apps/web/public/generated/burger/`, sliced out of the sprite sheet at `apps/hevo.png`.
+To re-cut them (needs Python with Pillow, NumPy and SciPy):
+
+```bash
+python tools/extract-burger-sprites.py
+```
+
 > **Check the licence terms of whichever generator you use before shipping commercially.**
 
 ---
@@ -121,7 +156,7 @@ function and no component changes.
 | Kitchen dashboard | ✅ Working, database-backed |
 | API — menu, orders, kitchen | ✅ Working |
 | Database, migrations, seed | ✅ SQLite |
-| Storefront reading from the API | ⚠️ Not yet — reads a local menu file; the DB seed is the same data but they are separate copies |
+| Storefront reading from the API | ⚠️ Not yet — renders from `packages/menu`, which is also what seeds the DB, so the two cannot disagree |
 | Payments | ⚠️ Simulated. No gateway connected; no money moves |
 | Accounts / auth | ❌ Not built. Profile is `localStorage` |
 | Rider app, admin, analytics | ❌ Not built |

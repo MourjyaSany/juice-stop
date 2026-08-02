@@ -9,6 +9,8 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "bootstrap:only": "node scripts/bootstrap.mjs --setup-only",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
@@ -27,7 +29,7 @@
     "db:seed": "pnpm --filter @juice-stop/db seed",
     "db:studio": "pnpm --filter @juice-stop/db studio",
     "db:reset": "pnpm --filter @juice-stop/db reset",
-    "prepare": "husky"
+    "prepare": "husky || exit 0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
