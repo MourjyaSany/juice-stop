@@ -15,7 +15,7 @@ import {
 } from '@/data/menu';
 import { priceCart, useCart } from '@/store/cart';
 import { assetForItem } from '@/data/assets';
-import { useIsSoldOut, useStockLeft } from '@/components/storefront-live';
+import { useAcceptingOrders, useIsSoldOut, useStockLeft } from '@/components/storefront-live';
 import { ItemSheet } from './item-sheet';
 import { FloatingCart } from './floating-cart';
 import { CartDrawer } from './cart-drawer';
@@ -27,6 +27,9 @@ import { SPRING } from './motion-provider';
 
 
 export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
+  // The prop is the server-rendered schedule; the hook is what the API says right now, including
+  // a manual override the owner set thirty seconds ago. The hook wins once it has an answer.
+  const takingOrders = useAcceptingOrders(acceptingOrders);
   const hydrated = useHydrated();
   const lines = useCart((s) => s.lines);
   const totals = useMemo(() => priceCart(lines), [lines]);
@@ -198,7 +201,7 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
                     item={item}
                     index={index}
                     quantity={quantityByItem.get(item.id) ?? 0}
-                    acceptingOrders={acceptingOrders}
+                    acceptingOrders={takingOrders}
                     onOpenSheet={() => setSheetItem(item)}
                     onIncrement={() => incrementSimple(item)}
                     onDecrement={() => decrementSimple(item)}

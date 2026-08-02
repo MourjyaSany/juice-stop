@@ -107,8 +107,46 @@ export interface OwnerOverview {
   categories: Array<{ categoryId: string; name: string; quantity: number; revenuePaise: string }>;
   revenueSeries: Array<{ businessDate: string; revenuePaise: string; orders: number }>;
   kitchen: { averagePrepMinutes: number | null; onTimeRate: number | null; sampleSize: number };
+  hourly: Array<{ hourIst: number; orders: number; revenuePaise: string }>;
+  fulfilmentSplit: Array<{ type: string; orders: number; revenuePaise: string }>;
+  paymentMix: Array<{
+    method: string;
+    orders: number;
+    revenuePaise: string;
+    estimatedFeePaise: string;
+  }>;
+  lostOrders: Array<{ reason: string; count: number }>;
+  comparison: {
+    previousWindow: { from: string; to: string };
+    revenuePaise: string;
+    orderCount: number;
+    revenueChangePct: number | null;
+    orderChangePct: number | null;
+  } | null;
   inventoryAlerts: Array<{ id: string; name: string; inStock: boolean; stockRemaining: number | null }>;
   generatedAt: string;
+}
+
+export interface StoreOverride {
+  mode: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED';
+  expiresAt: string | null;
+  reason: string | null;
+  setBy: string | null;
+  setAt: string | null;
+}
+
+export interface EffectiveStoreStatus {
+  acceptingOrders: boolean;
+  canBrowseMenu: boolean;
+  scheduledOpen: boolean;
+  override: StoreOverride;
+  orderingBlockedReason: string | null;
+  quotedEtaMinutes: number | null;
+  secondsUntilOpen: number | null;
+  secondsUntilClose: number | null;
+  capacityLoad: number;
+  localTime: string;
+  serverTime: string;
 }
 
 export interface ActivityEvent {
@@ -199,6 +237,12 @@ export const admin = {
   overview: (from?: string, to?: string) =>
     request<OwnerOverview>(`/admin/overview${dateQuery(from, to)}`),
   activity: () => request<{ events: ActivityEvent[] }>('/admin/activity'),
+  storeStatus: () => request<EffectiveStoreStatus>('/admin/store/override'),
+  setStoreOverride: (mode: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED', minutes?: number) =>
+    request<EffectiveStoreStatus>('/admin/store/override', {
+      method: 'POST',
+      body: JSON.stringify({ mode, ...(minutes !== undefined ? { minutes } : {}) }),
+    }),
   /** Absolute, because the browser navigates to it rather than fetching it. */
   exportCsvUrl: (from?: string, to?: string): string => {
     const token = kitchenSession.get() ?? '';

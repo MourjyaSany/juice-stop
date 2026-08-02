@@ -6,7 +6,8 @@ import { Money, toBusinessDate } from '@juice-stop/core';
 import { ApiError } from '@/lib/api';
 import { admin, toPaise, type OwnerOverview } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
-import { RankedBars, RevenueBars } from '@/components/admin/charts';
+import { Delta, HourlyChart, RankedBars, RevenueBars, SplitBar } from '@/components/admin/charts';
+import { StoreControl } from '@/components/admin/store-control';
 
 /**
  * Owner dashboard.
@@ -108,6 +109,16 @@ export default function AdminOverviewPage() {
         </p>
       )}
 
+      <section
+        className="mb-4 rounded-[16px] p-4"
+        style={{ background: 'var(--color-raised)', border: '1px solid var(--color-border-subtle)' }}
+      >
+        <h2 className="mb-3 text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
+          Shop control
+        </h2>
+        <StoreControl onChange={() => void load()} />
+      </section>
+
       {loading && data === null ? (
         <p className="py-20 text-center text-sm text-[var(--color-text-tertiary)]">Loading…</p>
       ) : data === null ? null : data.orderCount === 0 ? (
@@ -121,8 +132,21 @@ export default function AdminOverviewPage() {
               value={Money.format(toPaise(data.revenuePaise))}
               accent="#22C55E"
               emphasis
+              delta={data.comparison?.revenueChangePct ?? null}
+              hint={
+                data.comparison === null
+                  ? undefined
+                  : `vs ${Money.format(toPaise(data.comparison.revenuePaise))} before`
+              }
             />
-            <Metric label="Orders" value={String(data.orderCount)} accent="#FF6B1A" emphasis />
+            <Metric
+              label="Orders"
+              value={String(data.orderCount)}
+              accent="#FF6B1A"
+              emphasis
+              delta={data.comparison?.orderChangePct ?? null}
+              hint={data.comparison === null ? undefined : `vs ${data.comparison.orderCount} before`}
+            />
             <Metric
               label="Average order"
               value={Money.format(toPaise(data.averageOrderValuePaise))}
@@ -230,6 +254,72 @@ export default function AdminOverviewPage() {
             </Panel>
           </div>
 
+          {/* ── When the night actually happens ────────────────────────────────────────────── */}
+          <Panel title="Orders by hour · 7 PM to 4 AM">
+            <HourlyChart hours={data.hourly} />
+          </Panel>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Panel title="Delivery vs takeaway">
+              <SplitBar
+                rows={data.fulfilmentSplit.map((f) => ({
+                  label: f.type === 'DELIVERY' ? 'Delivery' : 'Takeaway',
+                  value: f.orders,
+                  sublabel: `${f.orders} orders`,
+                }))}
+                palette={['#FF6B1A', '#A855F7']}
+              />
+            </Panel>
+
+            <Panel title="How customers pay">
+              <SplitBar
+                rows={data.paymentMix.map((m) => ({
+                  label: m.method,
+                  value: m.orders,
+                  sublabel: Money.format(toPaise(m.revenuePaise)),
+                }))}
+                palette={['#22C55E', '#EAB308', '#A855F7', '#FF6B1A']}
+              />
+              {/* The margin story. UPI is zero-MDR by regulation; cards are not — so the mix is a
+                  cost line, not a curiosity. Marked estimated: these are typical gateway rates,
+                  not a contracted one. */}
+              <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-[var(--color-text-tertiary)]" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                Estimated processing cost{' '}
+                <span className="tabular font-semibold text-[var(--color-warning)]">
+                  {Money.format(
+                    toPaise(
+                      data.paymentMix
+                        .reduce((sum, m) => sum + BigInt(m.estimatedFeePaise), 0n)
+                        .toString(),
+                    ),
+                  )}
+                </span>
+                {' · UPI is zero-MDR; cards are ~2%'}
+              </p>
+            </Panel>
+
+            <Panel title="Lost orders">
+              {data.lostOrders.length === 0 ? (
+                <p className="py-8 text-center text-sm" style={{ color: 'var(--color-success)' }}>
+                  Nothing rejected or cancelled. Every order got made.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {data.lostOrders.map((row) => (
+                    <li key={row.reason} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="min-w-0 truncate text-[var(--color-text-secondary)]">
+                        {row.reason.replace(/_/g, ' ').toLowerCase()}
+                      </span>
+                      <span className="tabular shrink-0 font-semibold" style={{ color: 'var(--color-danger)' }}>
+                        {row.count}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          </div>
+
           {/* ── Inventory alerts ───────────────────────────────────────────────────────────── */}
           <Panel
             title="Inventory alerts"
@@ -313,12 +403,14 @@ function Metric({
   hint,
   accent,
   emphasis = false,
+  delta,
 }: {
   label: string;
   value: string;
   hint?: string | undefined;
   accent: string;
   emphasis?: boolean;
+  delta?: number | null | undefined;
 }) {
   return (
     <div
@@ -338,6 +430,11 @@ function Metric({
       >
         {value}
       </p>
+      {delta !== undefined && (
+        <p className="mt-0.5">
+          <Delta pct={delta} />
+        </p>
+      )}
       {hint !== undefined && (
         <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">{hint}</p>
       )}

@@ -4,9 +4,10 @@ import { KitchenController } from './kitchen.controller.js';
 import { OrderingService } from './ordering.service.js';
 import { KitchenModule } from '../kitchen/kitchen.module.js';
 import { KitchenAuthModule } from '../kitchen-auth/kitchen-auth.module.js';
+import { StoreModule } from '../store/store.module.js';
 
 @Module({
-  imports: [KitchenModule, KitchenAuthModule],
+  imports: [KitchenModule, KitchenAuthModule, StoreModule],
   controllers: [OrderingController, KitchenController],
   providers: [OrderingService],
   exports: [OrderingService],

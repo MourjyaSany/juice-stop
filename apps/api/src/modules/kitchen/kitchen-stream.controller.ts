@@ -55,7 +55,9 @@ export class StorefrontStreamController {
   @Sse('stream')
   stream(): Observable<SseMessage> {
     const events = this.realtime.asObservable().pipe(
-      filter((event) => event.type === 'inventory.changed'),
+      // Availability and store status only. Order events carry names, addresses and phone
+      // numbers, and this channel is public.
+      filter((event) => event.type === 'inventory.changed' || event.type === 'store.changed'),
       map((event) => ({ type: event.type, data: JSON.stringify(event) })),
     );
 

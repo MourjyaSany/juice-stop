@@ -38,6 +38,37 @@ export interface OwnerOverview {
   categories: Array<{ categoryId: string; name: string; quantity: number; revenuePaise: string }>;
   revenueSeries: Array<{ businessDate: string; revenuePaise: string; orders: number }>;
   kitchen: { averagePrepMinutes: number | null; onTimeRate: number | null; sampleSize: number };
+  /**
+   * Orders per hour across the service night, 19:00 to 04:00 IST.
+   *
+   * The most actionable chart here: it is how you decide when the second cook starts. "Peak hour"
+   * alone gives you the summit; this gives you the shape of the climb.
+   */
+  hourly: Array<{ hourIst: number; orders: number; revenuePaise: string }>;
+  /** Delivery vs takeaway. Drives rider scheduling and packaging stock. */
+  fulfilmentSplit: Array<{ type: string; orders: number; revenuePaise: string }>;
+  /**
+   * Payment mix, with real money attached.
+   *
+   * UPI carries zero MDR in India by regulation; cards cost roughly 2%. The mix is a margin
+   * figure, not a curiosity — drift from UPI to cards is a quiet pay cut.
+   */
+  paymentMix: Array<{
+    method: string;
+    orders: number;
+    revenuePaise: string;
+    estimatedFeePaise: string;
+  }>;
+  /** Why orders were refused. An empty list is good news and says so. */
+  lostOrders: Array<{ reason: string; count: number }>;
+  /** The same-length window immediately before this one, for a like-for-like read. */
+  comparison: {
+    previousWindow: DateWindow;
+    revenuePaise: string;
+    orderCount: number;
+    revenueChangePct: number | null;
+    orderChangePct: number | null;
+  } | null;
   inventoryAlerts: Array<{ id: string; name: string; inStock: boolean; stockRemaining: number | null }>;
   generatedAt: string;
 }
@@ -68,6 +99,8 @@ export class AnalyticsService {
           totalPaise: true,
           placedAt: true,
           customerPhone: true,
+          fulfilmentType: true,
+          paymentMethod: true,
         },
       }),
       this.prisma.orderItem.findMany({
@@ -112,6 +145,11 @@ export class AnalyticsService {
       categories: await this.categoryBreakdown(items),
       revenueSeries: revenueSeries(earning),
       kitchen: await this.kitchenPerformance(window),
+      hourly: hourlyBreakdown(earning),
+      fulfilmentSplit: splitBy(earning, (o) => o.fulfilmentType),
+      paymentMix: paymentMix(earning),
+      lostOrders: await this.lostOrders(window),
+      comparison: await this.comparison(window, revenuePaise, earning.length),
       inventoryAlerts: products
         .sort((a, b) => Number(a.inStock) - Number(b.inStock))
         .slice(0, 20)
@@ -214,6 +252,71 @@ export class AnalyticsService {
       averagePrepMinutes: Math.round(mean * 10) / 10,
       onTimeRate: Math.round((onTime / durations.length) * 1000) / 10,
       sampleSize: durations.length,
+    };
+  }
+
+  /**
+   * Why orders were lost, from the trail's rejection reasons.
+   *
+   * Read from the audit trail rather than a column, because a rejection can be undone — the trail
+   * keeps both halves of that story, and a denormalised field would keep only the last word.
+   */
+  private async lostOrders(window: DateWindow) {
+    const events = await this.prisma.orderStatusEvent.findMany({
+      where: {
+        order: {
+          businessDate: { gte: window.from, lte: window.to },
+          status: { in: ['REJECTED', 'CANCELLED'] },
+        },
+        toStatus: { in: ['REJECTED', 'CANCELLED'] },
+      },
+      select: { toStatus: true, reason: true },
+    });
+
+    const counts = new Map<string, number>();
+    for (const event of events) {
+      const label =
+        event.reason ?? (event.toStatus === 'CANCELLED' ? 'CUSTOMER_CANCELLED' : 'UNSPECIFIED');
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  /**
+   * The immediately preceding window of the same length.
+   *
+   * A revenue figure alone means nothing; the same figure with "up 18%" is a decision. The
+   * comparison window is derived from the current one, so the two always span equal nights.
+   */
+  private async comparison(window: DateWindow, revenue: bigint, orders: number) {
+    const spanDays = Math.max(
+      1,
+      Math.round((Date.parse(window.to) - Date.parse(window.from)) / 86_400_000) + 1,
+    );
+    const prevTo = new Date(Date.parse(window.from) - 86_400_000);
+    const prevFrom = new Date(prevTo.getTime() - (spanDays - 1) * 86_400_000);
+    const previousWindow = { from: isoDate(prevFrom), to: isoDate(prevTo) };
+
+    const previous = await this.prisma.order.findMany({
+      where: {
+        businessDate: { gte: previousWindow.from, lte: previousWindow.to },
+        status: { in: REVENUE_STATUSES },
+      },
+      select: { totalPaise: true },
+    });
+    // No baseline means no comparison. Rendering "+100%" against an empty night would be an
+    // invented insight.
+    if (previous.length === 0) return null;
+
+    const previousRevenue = previous.reduce((sum, o) => sum + o.totalPaise, 0n);
+    return {
+      previousWindow,
+      revenuePaise: previousRevenue.toString(),
+      orderCount: previous.length,
+      revenueChangePct: percentChange(Number(previousRevenue), Number(revenue)),
+      orderChangePct: percentChange(previous.length, orders),
     };
   }
 
@@ -350,6 +453,90 @@ function repeatCustomers(
     estimated: true,
   };
 }
+
+/**
+ * Orders per hour of the service night.
+ *
+ * Seeded with every hour from 19:00 to 03:00 so the chart keeps its shape through a quiet hour —
+ * a gap in the bars reads as missing data, a zero-height bar reads as a quiet hour.
+ */
+function hourlyBreakdown(orders: Array<{ placedAt: Date; totalPaise: bigint }>) {
+  const hours = [19, 20, 21, 22, 23, 0, 1, 2, 3];
+  const byHour = new Map<number, { orders: number; revenue: bigint }>(
+    hours.map((h) => [h, { orders: 0, revenue: 0n }]),
+  );
+
+  for (const order of orders) {
+    const hour = Number(
+      order.placedAt.toLocaleString('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        hour12: false,
+      }),
+    );
+    // An order placed outside the scheduled window — the owner opened early — still counts, in its
+    // own bucket. "We sold at 17:00" is exactly what this chart exists to reveal.
+    const row = byHour.get(hour) ?? { orders: 0, revenue: 0n };
+    row.orders += 1;
+    row.revenue += order.totalPaise;
+    byHour.set(hour, row);
+  }
+
+  return [...byHour.entries()]
+    .map(([hourIst, row]) => ({
+      hourIst,
+      orders: row.orders,
+      revenuePaise: row.revenue.toString(),
+    }))
+    .sort((a, b) => serviceOrder(a.hourIst) - serviceOrder(b.hourIst));
+}
+
+/** 19:00 first, 03:00 last — the night's own order, not the clock's. */
+const serviceOrder = (hour: number): number => (hour >= 19 ? hour - 19 : hour + 5);
+
+function splitBy<T extends { totalPaise: bigint }>(rows: T[], key: (row: T) => string) {
+  const totals = new Map<string, { orders: number; revenue: bigint }>();
+  for (const row of rows) {
+    const k = key(row);
+    const entry = totals.get(k) ?? { orders: 0, revenue: 0n };
+    entry.orders += 1;
+    entry.revenue += row.totalPaise;
+    totals.set(k, entry);
+  }
+  return [...totals.entries()]
+    .map(([type, entry]) => ({
+      type,
+      orders: entry.orders,
+      revenuePaise: entry.revenue.toString(),
+    }))
+    .sort((a, b) => b.orders - a.orders);
+}
+
+/**
+ * Indicative processing cost per payment method, in basis points.
+ *
+ * UPI is zero-MDR by Indian regulation. Card and wallet figures are typical gateway pricing, not a
+ * contracted rate — surfaced as *estimated* so nobody reconciles a settlement against them.
+ */
+const FEE_BPS: Record<string, number> = { UPI: 0, CARD: 200, NETBANKING: 150, WALLET: 180 };
+
+function paymentMix(orders: Array<{ paymentMethod: string; totalPaise: bigint }>) {
+  return splitBy(orders, (o) => o.paymentMethod).map((row) => ({
+    method: row.type,
+    orders: row.orders,
+    revenuePaise: row.revenuePaise,
+    estimatedFeePaise: (
+      (BigInt(row.revenuePaise) * BigInt(FEE_BPS[row.type] ?? 0)) /
+      10_000n
+    ).toString(),
+  }));
+}
+
+const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** Null when there is no baseline — a percentage against zero is not a number anyone can use. */
+const percentChange = (before: number, after: number): number | null =>
+  before === 0 ? null : Math.round(((after - before) / before) * 1000) / 10;
 
 function topProducts(
   items: Array<{ nameSnapshot: string; quantity: number; lineTotalPaise: bigint; order: { status: string } }>,

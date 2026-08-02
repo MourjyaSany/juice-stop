@@ -27,6 +27,8 @@ Full reasoning lives in [`docs/`](./docs); the pre-phase audit is
 | Shared domain types → `packages/core` | ✅ | A4 closed. Found and fixed a real bug: the pickup alphabet contained `5` despite claiming otherwise |
 | Lifecycle tests | ✅ | 19 new tests, 112 total in `core`. Pricing/state-machine service tests still open |
 | Owner dashboard | ✅ | Repeat customers labelled *estimated* (by phone); refunds render **Not tracked** rather than a fake zero |
+| Owner analytics (hourly, fulfilment, payment mix, lost orders, period comparison) | ✅ | — |
+| Manual shop open/close override | ✅ | Bounded, audited, realtime. Closes the server-side ordering gap too |
 | Smart inventory | 🔵 Next | — |
 | Kitchen rush mode | ⬜ | — |
 | Order timers | ✅ | Kitchen and customer now grade through one `phaseUrgency` in `core` |
@@ -53,7 +55,7 @@ Detail and evidence in the audit. Severity as assessed there.
 | A5 | No tests for the state machine, pricing, stock or auth — 103 tests are all in `core` | 🟠 |
 | A6 | `pnpm verify` cannot pass — ESLint is not installed | 🟠 |
 | A7 | `realtime` and `worker` process roles documented but unimplemented | 🟡 |
-| A8 | `Setting`, `AuditLog`, `IdempotencyKey` are dead tables | 🟡 |
+| A8 | ~~`Setting`~~ and ~~`AuditLog`~~ now used by the settings layer. `IdempotencyKey` still unused | 🟡 |
 | A9 | Superseded client-side status simulator still live for legacy local orders | 🟡 |
 | A10 | 2 focus-visible styles app-wide; no focus trapping; no skip link | 🟡 |
 | A11 | Payments simulated; menu prices are build-time constants | 🟢 |
@@ -67,6 +69,17 @@ Detail and evidence in the audit. Severity as assessed there.
 
 Roles are carried inside the signed token and enforced server-side by `@RequireRole('ADMIN')` on
 the whole admin controller, so a new endpoint added there is restricted by default.
+
+### Shop control
+
+The 7 PM – 4 AM schedule is a **default, not a rule**. The owner can force the shop open or closed
+from `/admin`; the override is stored in `Setting`, survives restarts, is written to `AuditLog` with
+who set it, expires automatically (5 min – 12 h, default 1 h) and is announced over realtime so
+customers already on the menu see it without refreshing.
+
+This also closed a real gap: `POST /orders` never checked the service window at all, so a stale tab
+or a direct call could place an order at 15:00. `StoreService` is now the single authority for both
+the button and the endpoint.
 
 ## Awaiting a decision
 

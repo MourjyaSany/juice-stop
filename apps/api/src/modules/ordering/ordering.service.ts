@@ -13,6 +13,7 @@ import {
 } from '@juice-stop/core';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import { RealtimeService } from '../../core/events/realtime.service.js';
+import { StoreService } from '../store/store.service.js';
 import { InventoryService } from '../kitchen/inventory.service.js';
 import {
   ConflictError,
@@ -87,6 +88,7 @@ export class OrderingService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
     private readonly inventory: InventoryService,
+    private readonly store: StoreService,
   ) {}
 
   /**
@@ -182,6 +184,25 @@ export class OrderingService {
   }
 
   async placeOrder(input: PlaceOrderInput) {
+    // The service window is enforced **here**, server-side, for the first time.
+    //
+    // It was previously only checked in the browser, so a stale tab, a wrong device clock or a
+    // direct API call could place an order at 15:00 into a kitchen nobody was standing in. The
+    // storefront's disabled button was a courtesy, not a control.
+    //
+    // Consulting StoreService rather than the clock is what makes "the owner opened early" work:
+    // one authority answers for both the button and the endpoint.
+    const store = await this.store.status();
+    if (!store.acceptingOrders) {
+      throw new ConflictError(
+        ErrorCode.STORE_CLOSED,
+        store.override.mode === 'FORCE_CLOSED'
+          ? 'The kitchen is closed right now. Please try again shortly.'
+          : 'Juice Stop is closed. Ordering opens at 7 PM.',
+        { meta: { reason: store.orderingBlockedReason, localTime: store.localTime } },
+      );
+    }
+
     const priced = await this.priceLines(input.lines);
     const totals = this.totalsFor(priced);
 

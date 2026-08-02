@@ -21,6 +21,37 @@ const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
  * pick out the one id they care about.
  */
 
+/**
+ * Whether the shop is taking orders, as the **server** sees it.
+ *
+ * The storefront previously decided this in the browser from the local clock, which meant a device
+ * with a wrong time saw a different shop than the kitchen did — and meant the owner's manual
+ * override could not reach the customer at all. `null` means "not yet known"; callers fall back to
+ * the local schedule so the first paint is never wrong-looking.
+ */
+interface StoreState {
+  acceptingOrders: boolean | null;
+  overrideMode: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED';
+  setStore: (acceptingOrders: boolean, overrideMode: StoreState['overrideMode']) => void;
+}
+
+export const useStoreLive = create<StoreState>()((set) => ({
+  acceptingOrders: null,
+  overrideMode: 'AUTO',
+  setStore: (acceptingOrders, overrideMode) => set({ acceptingOrders, overrideMode }),
+}));
+
+/**
+ * Server-confirmed ordering state, falling back to the caller's local computation until it lands.
+ *
+ * Ordering being *enabled* is enforced server-side regardless — this only decides what the button
+ * looks like, so an optimistic fallback costs a rejected request at worst, never a wrong order.
+ */
+export function useAcceptingOrders(localFallback: boolean): boolean {
+  const live = useStoreLive((s) => s.acceptingOrders);
+  return live ?? localFallback;
+}
+
 interface AvailabilityState {
   soldOut: Set<string>;
   lowStock: Record<string, number>;
@@ -70,6 +101,15 @@ export function StorefrontLive() {
   useEffect(() => {
     let cancelled = false;
 
+    void fetch(`${BASE}/storefront/store-status`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { acceptingOrders: boolean; override: { mode: StoreState['overrideMode'] } } | null) => {
+        if (!cancelled && data !== null) {
+          useStoreLive.getState().setStore(data.acceptingOrders, data.override.mode);
+        }
+      })
+      .catch(() => undefined);
+
     void fetch(`${BASE}/storefront/availability`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { soldOut: string[]; lowStock: Record<string, number> } | null) => {
@@ -78,6 +118,19 @@ export function StorefrontLive() {
       .catch(() => undefined);
 
     const source = new EventSource(`${BASE}/storefront/stream`);
+
+    // The owner opening early is only useful if customers already looking at the menu find out.
+    source.addEventListener('store.changed', (event) => {
+      try {
+        const parsed = JSON.parse((event as MessageEvent<string>).data) as {
+          data: { acceptingOrders: boolean; override: { mode: StoreState['overrideMode'] } };
+        };
+        useStoreLive.getState().setStore(parsed.data.acceptingOrders, parsed.data.override.mode);
+      } catch {
+        // A malformed frame is not worth tearing the connection down for.
+      }
+    });
+
     source.addEventListener('inventory.changed', (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent<string>).data) as {

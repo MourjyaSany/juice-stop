@@ -23,7 +23,8 @@ import { Subject, type Observable } from 'rxjs';
 export type RealtimeEventType =
   | 'order.placed'
   | 'order.status_changed'
-  | 'inventory.changed';
+  | 'inventory.changed'
+  | 'store.changed';
 
 export interface RealtimeEvent {
   type: RealtimeEventType;

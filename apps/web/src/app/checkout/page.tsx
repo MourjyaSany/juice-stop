@@ -17,6 +17,7 @@ import { checkProfileReadiness, useProfile } from '@/store/profile';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { estimateEtaSeconds, snapshotLines, snapshotTotals } from '@/lib/order-builder';
 import { ApiError, api, type ApiOrder } from '@/lib/api';
+import { useAcceptingOrders } from '@/components/storefront-live';
 import { FulfilmentToggle } from '@/components/checkout/fulfilment-toggle';
 import { CheckoutExtras } from '@/components/checkout/extras';
 import { BillSummary } from '@/components/bill-summary';
@@ -51,6 +52,10 @@ export default function CheckoutPage() {
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
 
+  // Server-confirmed, so an owner who opened early unblocks checkout without anyone refreshing.
+  // The API enforces this regardless — this only decides whether the button looks pressable.
+  const takingOrders = useAcceptingOrders(status.acceptingOrders);
+
   const takeaway = fulfilment === 'TAKEAWAY';
   const selectedAddress =
     profile.addresses.find((a) => a.id === addressId) ?? readiness.defaultAddress;
@@ -72,7 +77,7 @@ export default function CheckoutPage() {
     (!takeaway && selectedAddress === null) ||
     totals.itemCount === 0 ||
     !totals.meetsMinimum ||
-    !status.acceptingOrders;
+    !takingOrders;
 
   const placeOrder = async () => {
     if (blocked || placing) return;
@@ -467,7 +472,7 @@ export default function CheckoutPage() {
           />
         </section>
 
-        {!status.acceptingOrders && (
+        {!takingOrders && (
           <p
             className="mt-6 rounded-[13px] px-4 py-3 text-sm"
             style={{ background: 'rgb(255 107 26 / 0.12)', color: 'var(--color-orange-500)' }}

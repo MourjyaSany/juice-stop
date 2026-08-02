@@ -11,6 +11,8 @@ import { OrderingModule } from './modules/ordering/ordering.module.js';
 import { EventsModule } from './core/events/events.module.js';
 import { KitchenModule } from './modules/kitchen/kitchen.module.js';
 import { AnalyticsModule } from './modules/analytics/analytics.module.js';
+import { StoreModule } from './modules/store/store.module.js';
+import { SettingsModule } from './core/settings/settings.module.js';
 import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js';
 
 /**
@@ -29,7 +31,9 @@ import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js
     CacheModule,
     HealthModule,
     EventsModule,
+    SettingsModule,
     CatalogModule,
+    StoreModule,
     KitchenAuthModule,
     KitchenModule,
     AnalyticsModule,
