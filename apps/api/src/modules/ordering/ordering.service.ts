@@ -1,6 +1,16 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { Money, toBusinessDate, COMMERCIAL_TERMS, type Paise } from '@juice-stop/core';
+import {
+  Money,
+  toBusinessDate,
+  COMMERCIAL_TERMS,
+  UNAMBIGUOUS_ALPHABET,
+  formatOrderNumber,
+  formatPickupToken,
+  type FulfilmentType,
+  type Paise,
+  type PaymentMethod,
+} from '@juice-stop/core';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import { RealtimeService } from '../../core/events/realtime.service.js';
 import { InventoryService } from '../kitchen/inventory.service.js';
@@ -30,15 +40,8 @@ export interface OrderLineInput {
   note?: string;
 }
 
-/**
- * Cash on delivery is deliberately absent.
- *
- * Removing it also removes the entire cash-reconciliation surface — per-rider drawers, variance
- * tracking, COD risk caps. Every method below settles before the kitchen ever sees the ticket.
- */
-export type PaymentMethod = 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET';
-
-export type FulfilmentType = 'DELIVERY' | 'TAKEAWAY';
+// Both defined once in @juice-stop/core and re-exported so existing importers keep working.
+export type { PaymentMethod, FulfilmentType };
 
 export interface DeliveryAddressInput {
   label: string;
@@ -370,7 +373,9 @@ export class OrderingService {
   /** The kitchen queue — everything still needing work, oldest first. */
   async kitchenQueue() {
     const orders = await this.prisma.order.findMany({
-      where: { status: { in: KITCHEN_ACTIVE } },
+      // Spread because the shared constant is readonly — that immutability is the point, since a
+      // caller mutating the queue definition would silently change what every other caller sees.
+      where: { status: { in: [...KITCHEN_ACTIVE] } },
       orderBy: { placedAt: 'asc' },
       include: { items: true },
     });
@@ -577,18 +582,12 @@ const sha256 = (value: string): string => createHash('sha256').update(value).dig
  * hinge on whether that was a zero or an O. Same reasoning as the block letters we skip.
  */
 function mintPickupToken(): string {
-  const alphabet = '23456789ABCDEFGHJKLMNPQRTUVWXYZ';
-  let token = '';
-  for (let i = 0; i < 4; i++) token += alphabet[randomInt(0, alphabet.length)];
-  return `JS-${token}`;
+  // randomInt is cryptographically strong; the shared formatter owns the alphabet so the server
+  // and the storefront can never drift on which characters are legible.
+  return formatPickupToken(() => randomInt(0, UNAMBIGUOUS_ALPHABET.length) / UNAMBIGUOUS_ALPHABET.length);
 }
 
-function makeOrderNumber(at: Date): string {
-  const dd = String(at.getDate()).padStart(2, '0');
-  const mm = String(at.getMonth() + 1).padStart(2, '0');
-  const yy = String(at.getFullYear()).slice(2);
-  return `JS-${dd}${mm}${yy}-${randomInt(1000, 10_000)}`;
-}
+const makeOrderNumber = (at: Date): string => formatOrderNumber(at, randomInt(1000, 10_000));
 
 /** Money leaves as decimal strings of paise — `bigint` has no JSON representation (ADR-003). */
 function serialiseOrder(order: {

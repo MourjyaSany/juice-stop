@@ -24,12 +24,12 @@ Full reasoning lives in [`docs/`](./docs); the pre-phase audit is
 | Feature | State | Blocked by |
 |---|---|---|
 | Repository audit | ✅ | — |
-| Shared domain types → `packages/core` | ⬜ Next | — |
-| State machine + pricing tests | ⬜ | — |
-| Owner dashboard | ⬜ | Repeat customers needs identity; refunds have no data source |
+| Shared domain types → `packages/core` | ✅ | A4 closed. Found and fixed a real bug: the pickup alphabet contained `5` despite claiming otherwise |
+| Lifecycle tests | ✅ | 19 new tests, 112 total in `core`. Pricing/state-machine service tests still open |
+| Owner dashboard | 🔵 Next | Repeat customers needs identity; refunds have no data source |
 | Smart inventory | ⬜ | — |
 | Kitchen rush mode | ⬜ | — |
-| Order timers | 🟡 Partly shipped | Kitchen and customer define "late" differently — needs unifying |
+| Order timers | ✅ | Kitchen and customer now grade through one `phaseUrgency` in `core` |
 | Customer tracking timeline | ⬜ | **Q1** — are *Packed* / *Arriving* real lifecycle states? |
 | Takeaway QR + ready notification | ⬜ | — |
 | Empty states | ⬜ | — |
@@ -49,7 +49,7 @@ Detail and evidence in the audit. Severity as assessed there.
 | A1 | Transactional outbox written but never drained — ADR-006's guarantee is not in force | 🔴 |
 | A2 | `GET /orders/:id` unauthenticated; exposes name, phone, address | 🔴 |
 | A3 | No customer identity — profile is `localStorage`; `User`/`Address` unused by the API | 🔴 |
-| A4 | Five domain types duplicated across web/API | 🟠 |
+| ~~A4~~ | ~~Five domain types duplicated across web/API~~ — closed | ✅ |
 | A5 | No tests for the state machine, pricing, stock or auth — 103 tests are all in `core` | 🟠 |
 | A6 | `pnpm verify` cannot pass — ESLint is not installed | 🟠 |
 | A7 | `realtime` and `worker` process roles documented but unimplemented | 🟡 |

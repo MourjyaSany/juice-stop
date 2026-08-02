@@ -1,6 +1,6 @@
 'use client';
 
-import { Money } from '@juice-stop/core';
+import { Money, isFlowStatus, phaseUrgency, type UrgencyLevel } from '@juice-stop/core';
 import type { ApiOrder } from '@/lib/api';
 import { toPaise } from '@/lib/kitchen-api';
 import { OtpGate } from './otp-gate';
@@ -17,8 +17,6 @@ import { OtpGate } from './otp-gate';
  * red card that reads as grey is worse than no signal at all.
  */
 
-export type UrgencyLevel = 'calm' | 'watch' | 'pressing' | 'late';
-
 const URGENCY: Record<UrgencyLevel, { colour: string; label: string }> = {
   calm: { colour: '#22C55E', label: 'On time' },
   watch: { colour: '#EAB308', label: 'Watch' },
@@ -27,21 +25,23 @@ const URGENCY: Record<UrgencyLevel, { colour: string; label: string }> = {
 };
 
 /**
- * Urgency is measured against the order's **own** promised time, not a flat threshold.
+ * Urgency, graded by the **same** function the customer's tracking screen uses.
  *
- * A Maggi and a sizzler do not become urgent at the same age, and grading everything against one
- * constant would either cry wolf on slow food or stay green on fast food that is already late.
+ * This previously measured against the order's `promisedAt`, while the customer measured the
+ * current phase's allowance — so one order could read amber on the wall and green on the phone.
+ * Staff and customer disagreeing about whether food is late is worse than either answer alone.
+ *
+ * Orders in a non-flow state (rejected, cancelled) have no phase to grade, so they sit calm.
  */
 export function urgencyOf(order: ApiOrder, now: number): { level: UrgencyLevel; ratio: number } {
-  const placed = new Date(order.placedAt).getTime();
-  const promised = new Date(order.promisedAt).getTime();
-  const window = Math.max(promised - placed, 60_000);
-  const ratio = (now - placed) / window;
-
-  if (ratio >= 1) return { level: 'late', ratio };
-  if (ratio >= 0.8) return { level: 'pressing', ratio };
-  if (ratio >= 0.55) return { level: 'watch', ratio };
-  return { level: 'calm', ratio };
+  if (!isFlowStatus(order.status)) return { level: 'calm', ratio: 0 };
+  const { level, ratio } = phaseUrgency(
+    order.status,
+    new Date(order.placedAt).getTime(),
+    new Date(order.statusChangedAt ?? order.placedAt).getTime(),
+    now,
+  );
+  return { level, ratio };
 }
 
 export function elapsedLabel(fromIso: string, now: number): string {

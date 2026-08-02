@@ -95,6 +95,8 @@ export interface ApiOrder {
   paymentMethod: string;
   paymentStatus: string;
   placedAt: string;
+  /** When the kitchen last moved it. Drives the phase countdown on both dashboards. */
+  statusChangedAt?: string;
   editableUntil: string;
   promisedAt: string;
   prepSeconds: number;

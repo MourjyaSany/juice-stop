@@ -2,7 +2,20 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Money, type Paise } from '@juice-stop/core';
+import {
+  Money,
+  ORDER_FLOW,
+  PHASE_ETA_SECONDS,
+  PAYMENT_METHODS as PAYMENT_METHOD_IDS,
+  formatOrderNumber,
+  formatPickupToken,
+  phaseAnchor,
+  phaseUrgency,
+  type FulfilmentType,
+  type OrderFlowStatus,
+  type Paise,
+  type PaymentMethod,
+} from '@juice-stop/core';
 import { api } from '@/lib/api';
 import type { CartLine } from './cart';
 
@@ -22,22 +35,11 @@ import type { CartLine } from './cart';
  * truth (ADR-008) — the shape below is already the shape those events carry.
  */
 
-export type OrderStatus =
-  | 'PLACED'
-  | 'ACCEPTED'
-  | 'PREPARING'
-  | 'READY'
-  | 'OUT_FOR_DELIVERY'
-  | 'DELIVERED';
-
-export const ORDER_FLOW: readonly OrderStatus[] = [
-  'PLACED',
-  'ACCEPTED',
-  'PREPARING',
-  'READY',
-  'OUT_FOR_DELIVERY',
-  'DELIVERED',
-];
+// All of these now live in @juice-stop/core, so the storefront and the API cannot drift on what
+// an order status is. Re-exported because ~15 call sites import them from here.
+export type OrderStatus = OrderFlowStatus;
+export { ORDER_FLOW, PHASE_ETA_SECONDS };
+export type { FulfilmentType, PaymentMethod };
 
 /** How long the customer may change their mind after placing. */
 export const EDIT_WINDOW_MS = 10 * 60 * 1000;
@@ -61,14 +63,6 @@ export interface OrderAddressSnapshot {
   contactName: string;
   contactPhone: string;
 }
-
-export type FulfilmentType = 'DELIVERY' | 'TAKEAWAY';
-
-/**
- * Cash on delivery is deliberately absent. Every method settles before the kitchen sees the
- * ticket, which removes the entire cash-reconciliation surface with it.
- */
-export type PaymentMethod = 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET';
 
 export const PAYMENT_METHODS: Array<{ id: PaymentMethod; label: string; note: string }> = [
   // UPI first and default: zero MDR by regulation in India versus ~2% on cards, which makes this
@@ -167,23 +161,12 @@ interface OrdersState {
  * Generated client-side only because the storefront does not place orders through the API yet;
  * the server mints the authoritative one, since a client-generated code proves nothing.
  */
-function mintPickupToken(): string {
-  const alphabet = '23456789ABCDEFGHJKLMNPQRTUVWXYZ';
-  let token = '';
-  for (let i = 0; i < 4; i++) {
-    token += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return `JS-${token}`;
-}
+/** Local fallback only — the server mints the authoritative token. Shared formatter, one alphabet. */
+const mintPickupToken = (): string => formatPickupToken(Math.random);
 
-/** JS-270726-0417 — readable, sortable, and it does not leak nightly order volume. */
-function orderNumber(placedAt: number): string {
-  const d = new Date(placedAt);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(2);
-  return `JS-${dd}${mm}${yy}-${Math.floor(Math.random() * 9000 + 1000)}`;
-}
+/** Local fallback only — the server mints the authoritative number. */
+const orderNumber = (placedAt: number): string =>
+  formatOrderNumber(new Date(placedAt), Math.floor(Math.random() * 9000 + 1000));
 
 export const useOrders = create<OrdersState>()(
   persist(
@@ -283,30 +266,6 @@ export function editWindow(order: PlacedOrder, now = Date.now()): EditWindow {
     elapsed: Math.min(1, Math.max(0, 1 - remainingMs / EDIT_WINDOW_MS)),
   };
 }
-
-/**
- * How long each phase promises, in seconds.
- *
- * The countdown **restarts** at each of these when the kitchen moves the order, rather than
- * running down one total from the moment of ordering. That is a deliberate choice about honesty:
- * a single clock started at checkout is wrong the instant the kitchen runs behind, and a customer
- * watching it hit zero while their food is still on the grill trusts nothing it says afterwards.
- * Re-quoting per phase means each number is a fresh promise made at the moment the kitchen
- * committed to that step — which is the only moment anyone actually knows anything.
- *
- * PLACED and ACCEPTED share one 50-minute clock counted from **placement**, not from the
- * transition. Accepting is an acknowledgement, not progress — restarting the countdown there
- * would hand the customer back ten minutes they had already spent waiting, which reads as the
- * order going backwards.
- */
-export const PHASE_ETA_SECONDS: Record<OrderStatus, number> = {
-  PLACED: 50 * 60,
-  ACCEPTED: 50 * 60,
-  PREPARING: 40 * 60,
-  READY: 25 * 60,
-  OUT_FOR_DELIVERY: 15 * 60,
-  DELIVERED: 0,
-};
 
 /* ── Timeline ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -433,22 +392,17 @@ function progressFromStatus(
   now: number,
 ): OrderProgress {
   const stepIndex = Math.max(0, ORDER_FLOW.indexOf(status));
-  // Prefer the kitchen's own timestamp over when we happened to hear about it — polling adds up
-  // to five seconds of lag, and a countdown that loses five seconds at every phase change is a
-  // countdown the customer will catch being wrong.
-  const since =
-    status === 'PLACED' || status === 'ACCEPTED'
-      ? order.placedAt
-      : (order.statusChangedAt ?? order.serverStatusAt ?? order.placedAt);
+  // Prefer the kitchen's own timestamp over when we happened to hear about it — polling adds up to
+  // five seconds of lag, and a countdown that loses five seconds at every phase change is one the
+  // customer will catch being wrong.
+  const changedAt = order.statusChangedAt ?? order.serverStatusAt ?? order.placedAt;
 
-  const allowanceMs = PHASE_ETA_SECONDS[status] * 1000;
-  const elapsed = now - since;
-  // Clamped at zero rather than going negative. "0:00" while a rider is still climbing the stairs
-  // is a late order; "−3:41" is a broken app.
-  const secondsRemaining = Math.max(0, Math.round((allowanceMs - elapsed) / 1000));
-
-  const stepProgress =
-    status === 'DELIVERED' ? 1 : Math.min(1, Math.max(0, elapsed / Math.max(1, allowanceMs)));
+  // One grader, shared with the kitchen board. Previously each side had its own idea of "late":
+  // the wall tablet measured against promisedAt while the phone measured phase allowances, so one
+  // order could be amber for staff and green for the customer.
+  const { ratio, secondsRemaining } = phaseUrgency(status, order.placedAt, changedAt, now);
+  const since = phaseAnchor(status, order.placedAt, changedAt);
+  const stepProgress = status === 'DELIVERED' ? 1 : Math.min(1, ratio);
 
   const reachedAt: Partial<Record<OrderStatus, number>> = { PLACED: order.placedAt };
   const span = Math.max(1, since - order.placedAt);
@@ -461,8 +415,8 @@ function progressFromStatus(
     stepIndex,
     stepProgress,
     secondsRemaining,
-    // Late means the *current* phase has overrun its promise — which is what the customer is
-    // watching — not that some total set at checkout has elapsed.
+    // Late means the *current* phase has overrun its promise — what the customer is watching — not
+    // that some total set at checkout has elapsed.
     isLate: secondsRemaining === 0 && status !== 'DELIVERED',
     reachedAt,
   };

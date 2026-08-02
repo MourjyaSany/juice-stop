@@ -6,18 +6,17 @@
  * makes "how did this order reach DELIVERED without being COOKED?" an answerable question.
  */
 
-export const ORDER_STATUSES = [
-  'PLACED',
-  'ACCEPTED',
-  'PREPARING',
-  'READY',
-  'OUT_FOR_DELIVERY',
-  'DELIVERED',
-  'CANCELLED',
-  'REJECTED',
-] as const;
+import {
+  KITCHEN_ACTIVE_STATUSES,
+  ORDER_STATUSES,
+  isTerminalStatus,
+  type OrderStatus,
+} from '@juice-stop/core';
 
-export type OrderStatus = (typeof ORDER_STATUSES)[number];
+// Vocabulary comes from the shared package; *legality* stays here. Who may move an order, and from
+// where, is an authorisation decision — it does not belong in a package the browser can read.
+export { ORDER_STATUSES };
+export type { OrderStatus };
 
 export type ActorRole = 'CUSTOMER' | 'KITCHEN' | 'RIDER' | 'ADMIN' | 'SYSTEM';
 
@@ -101,10 +100,7 @@ export function canTransition(
 }
 
 /** Statuses the kitchen still has work for. Drives the queue query. */
-export const KITCHEN_ACTIVE: OrderStatus[] = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY'];
+export const KITCHEN_ACTIVE: readonly OrderStatus[] = KITCHEN_ACTIVE_STATUSES;
 
 /** Terminal states — nothing further happens to these orders. */
-export const TERMINAL: OrderStatus[] = ['DELIVERED', 'CANCELLED', 'REJECTED'];
-
-export const isTerminal = (status: string): boolean =>
-  (TERMINAL as string[]).includes(status);
+export const isTerminal = isTerminalStatus;
