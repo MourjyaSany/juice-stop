@@ -25,7 +25,8 @@ export class KitchenAuthController {
     if (!parsed.success) throw new ValidationError('Enter a username and password.');
 
     const { username, password } = parsed.data;
-    if (!this.auth.verifyCredentials(username, password)) {
+    const role = this.auth.verifyCredentials(username, password);
+    if (role === null) {
       // One message for both wrong-user and wrong-password. Distinguishing them turns the login
       // form into a username oracle.
       throw new UnauthorizedError(
@@ -34,7 +35,7 @@ export class KitchenAuthController {
       );
     }
 
-    return this.auth.issueToken(username);
+    return this.auth.issueToken(username, role);
   }
 
   /** Lets the dashboard confirm a stored token is still good before rendering. */

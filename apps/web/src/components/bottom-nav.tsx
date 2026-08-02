@@ -17,7 +17,7 @@ const TABS = [
 ] as const;
 
 /** Surfaces that are not the customer app and must not carry customer navigation. */
-const STAFF_ROUTES = ['/kitchen'];
+const STAFF_ROUTES = ['/kitchen', '/admin'];
 
 /**
  * Floating tab bar.

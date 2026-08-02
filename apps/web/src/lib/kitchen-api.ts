@@ -91,6 +91,38 @@ export interface InventoryItem {
 
 export type StockPreset = 'UNLIMITED' | 'TEN' | 'FIVE' | 'OUT';
 
+export interface OwnerOverview {
+  window: { from: string; to: string };
+  revenuePaise: string;
+  orderCount: number;
+  averageOrderValuePaise: string;
+  peakHour: { hourIst: number; orders: number } | null;
+  inProgress: number;
+  completed: number;
+  cancelled: number;
+  rejected: number;
+  refundsPaise: string | null;
+  repeatCustomers: { count: number; basis: 'PHONE_NUMBER'; estimated: true } | null;
+  topProducts: Array<{ name: string; quantity: number; revenuePaise: string }>;
+  categories: Array<{ categoryId: string; name: string; quantity: number; revenuePaise: string }>;
+  revenueSeries: Array<{ businessDate: string; revenuePaise: string; orders: number }>;
+  kitchen: { averagePrepMinutes: number | null; onTimeRate: number | null; sampleSize: number };
+  inventoryAlerts: Array<{ id: string; name: string; inStock: boolean; stockRemaining: number | null }>;
+  generatedAt: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  orderNumber: string;
+  customerName: string | null;
+  totalPaise: string;
+  from: string | null;
+  to: string;
+  actor: string;
+  reason: string | null;
+  at: string;
+}
+
 export interface RealtimeEnvelope {
   type: 'order.placed' | 'order.status_changed' | 'inventory.changed' | 'ping';
   id: string;
@@ -102,12 +134,15 @@ export interface RealtimeEnvelope {
 
 export const kitchen = {
   login: (username: string, password: string) =>
-    request<{ token: string; session: { username: string; expiresAt: string } }>('/kitchen/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    }),
+    request<{ token: string; session: { username: string; role: 'KITCHEN' | 'ADMIN'; expiresAt: string } }>(
+      '/kitchen/auth/login',
+      { method: 'POST', body: JSON.stringify({ username, password }) },
+    ),
 
-  session: () => request<{ session: { username: string; expiresAt: string } }>('/kitchen/auth/session'),
+  session: () =>
+    request<{ session: { username: string; role: 'KITCHEN' | 'ADMIN'; expiresAt: string } }>(
+      '/kitchen/auth/session',
+    ),
 
   queue: () => request<{ orders: ApiOrder[]; serverTime: string }>('/kitchen/queue'),
   completed: () => request<{ orders: ApiOrder[]; serverTime: string }>('/kitchen/completed'),
@@ -153,5 +188,28 @@ export const kitchen = {
     return token === null ? null : `${BASE}/kitchen/stream?token=${encodeURIComponent(token)}`;
   },
 };
+
+/**
+ * Owner dashboard.
+ *
+ * Same client, same token, same session storage as the kitchen — one identity, two applications.
+ * The server enforces the role; this is only which endpoints the screen calls.
+ */
+export const admin = {
+  overview: (from?: string, to?: string) =>
+    request<OwnerOverview>(`/admin/overview${dateQuery(from, to)}`),
+  activity: () => request<{ events: ActivityEvent[] }>('/admin/activity'),
+  /** Absolute, because the browser navigates to it rather than fetching it. */
+  exportCsvUrl: (from?: string, to?: string): string => {
+    const token = kitchenSession.get() ?? '';
+    const sep = dateQuery(from, to) === '' ? '?' : '&';
+    return `${BASE}/admin/export.csv${dateQuery(from, to)}${sep}token=${encodeURIComponent(token)}`;
+  },
+};
+
+const dateQuery = (from?: string, to?: string): string =>
+  from !== undefined && to !== undefined
+    ? `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    : '';
 
 export const toPaise = (value: string): Paise => Money.paise(BigInt(value));

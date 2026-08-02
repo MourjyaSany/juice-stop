@@ -10,6 +10,7 @@ import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { OrderingModule } from './modules/ordering/ordering.module.js';
 import { EventsModule } from './core/events/events.module.js';
 import { KitchenModule } from './modules/kitchen/kitchen.module.js';
+import { AnalyticsModule } from './modules/analytics/analytics.module.js';
 import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js';
 
 /**
@@ -31,6 +32,7 @@ import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js
     CatalogModule,
     KitchenAuthModule,
     KitchenModule,
+    AnalyticsModule,
     OrderingModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],

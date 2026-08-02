@@ -1,11 +1,22 @@
 import { CanActivate, ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { KitchenAuthService, type KitchenSession } from './kitchen-auth.service.js';
+import { KitchenAuthService, type KitchenSession, type StaffRole } from './kitchen-auth.service.js';
+import { ErrorCode, ForbiddenError } from '../../core/errors/app-error.js';
 
 /** Opt a route out of the guard. Used only by the login endpoint itself. */
 export const PUBLIC_KEY = 'kitchen:public';
 export const KitchenPublic = (): MethodDecorator => SetMetadata(PUBLIC_KEY, true);
+
+/**
+ * Restrict a controller or handler to specific staff roles.
+ *
+ * Absent means "any signed-in staff member". Applied at the controller level for the admin
+ * surface, so adding an endpoint there cannot accidentally expose revenue to the kitchen tablet.
+ */
+export const ROLES_KEY = 'staff:roles';
+export const RequireRole = (...roles: StaffRole[]): ClassDecorator & MethodDecorator =>
+  SetMetadata(ROLES_KEY, roles);
 
 export interface RequestWithKitchenSession extends Request {
   kitchenSession?: KitchenSession;
@@ -40,7 +51,22 @@ export class KitchenAuthGuard implements CanActivate {
     const bearer = header?.startsWith('Bearer ') === true ? header.slice(7) : undefined;
     const queryToken = typeof request.query['token'] === 'string' ? request.query['token'] : undefined;
 
-    request.kitchenSession = this.auth.verifyToken(bearer ?? queryToken);
+    const session = this.auth.verifyToken(bearer ?? queryToken);
+    request.kitchenSession = session;
+
+    const required = this.reflector.getAllAndOverride<StaffRole[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    // 403, not 401: the token is valid and the session is real — this account simply may not see
+    // this. Answering 401 would send a signed-in cook back to a login screen that cannot help.
+    if (required !== undefined && required.length > 0 && !required.includes(session.role)) {
+      throw new ForbiddenError(
+        ErrorCode.PERMISSION_DENIED,
+        'This area is restricted to the owner account.',
+      );
+    }
+
     return true;
   }
 }

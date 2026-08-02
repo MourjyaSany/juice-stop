@@ -19,15 +19,26 @@ import { ErrorCode, UnauthorizedError } from '../../core/errors/app-error.js';
  *     merely warns is a dev backdoor that ships.
  */
 
-/** The only account, and only outside production. */
-const DEV_USERNAME = 'cook';
-const DEV_PASSWORD = 'cook123';
+export type StaffRole = 'KITCHEN' | 'ADMIN';
+
+/**
+ * The only accounts, and only outside production.
+ *
+ * Two roles rather than two auth systems. The owner dashboard and the kitchen board are different
+ * *applications*, but they are the same *identity problem* — building a second login for the
+ * second screen would mean two token formats, two guards and two places to get session expiry
+ * wrong. Roles are carried in the signed token, so a cook cannot reach revenue by changing a URL.
+ */
+const ACCOUNTS: Record<string, { password: string; role: StaffRole }> = {
+  cook: { password: 'cook123', role: 'KITCHEN' },
+  owner: { password: 'owner123', role: 'ADMIN' },
+};
 
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface KitchenSession {
   username: string;
-  role: 'KITCHEN';
+  role: StaffRole;
   expiresAt: string;
 }
 
@@ -55,26 +66,34 @@ export class KitchenAuthService implements OnModuleInit {
       );
     }
     this.logger.warn(
-      `Kitchen auth is DEVELOPMENT ONLY — username "${DEV_USERNAME}". Replace before production.`,
+      `Staff auth is DEVELOPMENT ONLY — accounts: ${Object.keys(ACCOUNTS).join(', ')}. ` +
+        'Replace before production.',
     );
   }
 
-  verifyCredentials(username: string, password: string): boolean {
-    // Compare both fields in constant time and without short-circuiting, so neither the username's
-    // existence nor the password's prefix is observable from response timing.
-    const userOk = safeEqual(username, DEV_USERNAME);
-    const passOk = safeEqual(password, DEV_PASSWORD);
-    return userOk && passOk;
+  /**
+   * Returns the role on success, null on failure.
+   *
+   * Every candidate password is compared even once a match is impossible, so response timing does
+   * not reveal which usernames exist.
+   */
+  verifyCredentials(username: string, password: string): StaffRole | null {
+    let matched: StaffRole | null = null;
+    for (const [name, account] of Object.entries(ACCOUNTS)) {
+      const userOk = safeEqual(username, name);
+      const passOk = safeEqual(password, account.password);
+      if (userOk && passOk) matched = account.role;
+    }
+    return matched;
   }
 
-  issueToken(username: string): { token: string; session: KitchenSession } {
+  issueToken(username: string, role: StaffRole): { token: string; session: KitchenSession } {
     const expiresAt = Date.now() + TOKEN_TTL_MS;
-    const payload = `${username}.${expiresAt}`;
+    // Role is inside the signed payload, not alongside it — a client-supplied role is a client
+    // that can promote itself to owner.
+    const payload = `${username}.${role}.${expiresAt}`;
     const token = `${Buffer.from(payload).toString('base64url')}.${this.sign(payload)}`;
-    return {
-      token,
-      session: { username, role: 'KITCHEN', expiresAt: new Date(expiresAt).toISOString() },
-    };
+    return { token, session: { username, role, expiresAt: new Date(expiresAt).toISOString() } };
   }
 
   /** Throws rather than returning null — every caller's only sane response is 401. */
@@ -93,16 +112,19 @@ export class KitchenAuthService implements OnModuleInit {
       throw new UnauthorizedError(ErrorCode.AUTH_TOKEN_INVALID, 'Invalid session token.');
     }
 
-    const [username, expiresRaw] = payload.split('.');
+    const [username, role, expiresRaw] = payload.split('.');
     const expiresAt = Number(expiresRaw);
-    if (username === undefined || Number.isNaN(expiresAt)) {
+    if (username === undefined || role === undefined || Number.isNaN(expiresAt)) {
       throw new UnauthorizedError(ErrorCode.AUTH_TOKEN_INVALID, 'Malformed session token.');
+    }
+    if (role !== 'KITCHEN' && role !== 'ADMIN') {
+      throw new UnauthorizedError(ErrorCode.AUTH_TOKEN_INVALID, 'Unknown role on session token.');
     }
     if (Date.now() >= expiresAt) {
       throw new UnauthorizedError(ErrorCode.AUTH_TOKEN_EXPIRED, 'Session expired — please sign in again.');
     }
 
-    return { username, role: 'KITCHEN', expiresAt: new Date(expiresAt).toISOString() };
+    return { username, role, expiresAt: new Date(expiresAt).toISOString() };
   }
 
   private sign(payload: string): string {

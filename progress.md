@@ -26,8 +26,8 @@ Full reasoning lives in [`docs/`](./docs); the pre-phase audit is
 | Repository audit | ✅ | — |
 | Shared domain types → `packages/core` | ✅ | A4 closed. Found and fixed a real bug: the pickup alphabet contained `5` despite claiming otherwise |
 | Lifecycle tests | ✅ | 19 new tests, 112 total in `core`. Pricing/state-machine service tests still open |
-| Owner dashboard | 🔵 Next | Repeat customers needs identity; refunds have no data source |
-| Smart inventory | ⬜ | — |
+| Owner dashboard | ✅ | Repeat customers labelled *estimated* (by phone); refunds render **Not tracked** rather than a fake zero |
+| Smart inventory | 🔵 Next | — |
 | Kitchen rush mode | ⬜ | — |
 | Order timers | ✅ | Kitchen and customer now grade through one `phaseUrgency` in `core` |
 | Customer tracking timeline | ⬜ | **Q1** — are *Packed* / *Arriving* real lifecycle states? |
@@ -57,6 +57,16 @@ Detail and evidence in the audit. Severity as assessed there.
 | A9 | Superseded client-side status simulator still live for legacy local orders | 🟡 |
 | A10 | 2 focus-visible styles app-wide; no focus trapping; no skip link | 🟡 |
 | A11 | Payments simulated; menu prices are build-time constants | 🟢 |
+
+## Staff accounts (development only)
+
+| Account | Password | Sees |
+|---|---|---|
+| `owner` | `owner123` | `/admin` — revenue, reports, activity, CSV export. Also has kitchen access |
+| `cook` | `cook123` | `/kitchen` only. **403** on every `/admin` endpoint |
+
+Roles are carried inside the signed token and enforced server-side by `@RequireRole('ADMIN')` on
+the whole admin controller, so a new endpoint added there is restricted by default.
 
 ## Awaiting a decision
 
