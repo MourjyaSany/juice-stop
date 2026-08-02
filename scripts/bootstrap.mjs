@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SETUP_ONLY = process.argv.includes('--setup-only');
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 /** The pinned pnpm, read from `packageManager` so this script can never drift from it. */
 const PINNED_PNPM = (() => {
@@ -150,6 +150,21 @@ function installDependencies() {
   ok('Workspace installed');
 }
 
+function buildLibraries() {
+  step('Building workspace libraries');
+  // core and menu resolve to ./dist, which is gitignored — a fresh clone has no build output at
+  // all. `pnpm dev` starts every watcher concurrently, so without this the API can boot before
+  // tsc has emitted core/dist and die on a missing module. The seed needs menu/dist and the
+  // generated Prisma client for the same reason.
+  mustSucceed('Library build', 'pnpm', [
+    '--filter', '@juice-stop/core',
+    '--filter', '@juice-stop/menu',
+    '--filter', '@juice-stop/db',
+    'build',
+  ]);
+  ok('core, menu and db built (Prisma client generated)');
+}
+
 function prepareDatabase() {
   step('Preparing the database');
 
@@ -158,7 +173,6 @@ function prepareDatabase() {
   const dbFile = join(ROOT, 'packages', 'db', 'prisma', 'dev.db');
   const isFirstRun = !existsSync(dbFile);
 
-  mustSucceed('Prisma client generation', 'pnpm', ['--filter', '@juice-stop/db', 'generate']);
   mustSucceed('Migration', 'pnpm', ['--filter', '@juice-stop/db', 'migrate:deploy']);
   ok('Schema up to date');
 
@@ -198,6 +212,7 @@ checkNode();
 ensurePnpm();
 ensureEnv();
 installDependencies();
+buildLibraries();
 prepareDatabase();
 
 if (SETUP_ONLY) {

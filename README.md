@@ -37,6 +37,10 @@ works as-is.
 | **Kitchen board** | http://localhost:3100/kitchen | Staff queue: accept → cook → ready |
 | **API** | http://localhost:3000/api/v1 | REST. `/health/ready` should report `database: up` |
 
+The API logs `Redis unavailable at boot — running in degraded mode` on startup. That is expected
+and nothing is broken: Redis is optional for local development and only backs caching and rate
+limiting. Everything in the order path works without it.
+
 Re-running the command later is safe: it reinstalls, re-applies migrations and starts the servers,
 but leaves an existing database alone — seeding truncates every table, so it is never automatic
 once the database exists. `pnpm bootstrap:only` stops after setup instead of starting the servers.
