@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { api } from '@/lib/api';
+import { orderApi } from '@/lib/api';
 import { useOrders, type AnyOrderStatus, type PaymentStatus } from '@/store/orders';
 
 const POLL_MS = 5000;
@@ -43,6 +43,8 @@ export function useOrderSync(): void {
 
   // Only the ids matter to the effect. Depending on the array itself would restart the interval
   // on every unrelated store write — including the ones this effect causes.
+  const tokenById = new Map(orders.map((o) => [o.id, o.accessToken]));
+
   const activeIds = orders
     .filter((o) => !o.id.startsWith('ord_') && !FINISHED.has(o.serverStatus ?? ''))
     .map((o) => o.id)
@@ -66,12 +68,7 @@ export function useOrderSync(): void {
       await Promise.all(
         ids.map(async (id) => {
           try {
-            const order = await api.get<{
-              status: string;
-              statusChangedAt?: string;
-              paymentStatus?: string;
-              paymentExpiresAt?: string | null;
-            }>(`/orders/${id}`);
+            const order = await orderApi.get(id, tokenById.get(id));
             if (cancelled) return;
             // The kitchen's own timestamp, not ours. Polling adds up to five seconds of lag, and
             // the countdown restarts from this instant.

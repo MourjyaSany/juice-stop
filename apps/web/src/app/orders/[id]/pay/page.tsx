@@ -54,7 +54,7 @@ export default function PayPage() {
   useEffect(() => {
     let cancelled = false;
     void storefrontApi
-      .paymentFor(params.id)
+      .paymentFor(params.id, order?.accessToken)
       .then((r) => {
         if (!cancelled) setPayment(r.payment);
       })

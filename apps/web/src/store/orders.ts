@@ -19,7 +19,7 @@ import {
   type PaymentMethod,
   type PaymentStatus,
 } from '@juice-stop/core';
-import { api } from '@/lib/api';
+import { orderApi } from '@/lib/api';
 import type { CartLine } from './cart';
 
 /**
@@ -115,6 +115,14 @@ export interface PlacedOrder extends OrderTotalsSnapshot {
   address: OrderAddressSnapshot | null;
   /** Collection code, takeaway only. Server-generated in production. */
   pickupToken: string | null;
+  /**
+   * The per-order capability minted by the server at placement.
+   *
+   * This is what proves a device may read or change this order now that `GET /orders/:id` is no
+   * longer open to the world. Kept in the same local record as the order because that is exactly
+   * its scope: this device, this order. Absent on orders placed before tokens existed.
+   */
+  accessToken?: string;
   paymentMethod: PaymentMethod;
   /** Honest ETA — we grade ourselves against this (ADR-013). */
   promisedAt: number;
@@ -166,6 +174,7 @@ interface OrdersState {
       orderNumber: string;
       otp: string;
       pickupToken: string | null;
+      accessToken: string;
       /** What the server actually created — AWAITING_PAYMENT for UPI, PLACED for cash. */
       status: AnyOrderStatus;
       paymentStatus: PaymentStatus;
@@ -233,6 +242,7 @@ export const useOrders = create<OrdersState>()(
           // kitchen has not even been told about.
           ...(serverIdentity !== undefined
             ? {
+                accessToken: serverIdentity.accessToken,
                 serverStatus: serverIdentity.status,
                 serverStatusAt: Date.now(),
                 paymentStatus: serverIdentity.paymentStatus,
@@ -296,7 +306,7 @@ export const useOrders = create<OrdersState>()(
         // staring at a countdown for an order the customer has already committed to. Locally
         // minted ids predate the API and have nothing to confirm against.
         if (!orderId.startsWith('ord_')) {
-          void api.post(`/orders/${orderId}/confirm-now`).catch(() => {
+          void orderApi.confirmNow(orderId, get().orders.find((o) => o.id === orderId)?.accessToken).catch(() => {
             // The window lapses on its own within ten minutes either way, so a failure here costs
             // a wait rather than correctness — not worth an error banner over.
           });

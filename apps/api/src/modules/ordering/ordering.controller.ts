@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { PAYMENT_METHODS } from '@juice-stop/core';
 import { OrderingService, type OrderLineInput } from './ordering.service.js';
+import { OrderAccessGuard } from './order-access.guard.js';
 import { ValidationError } from '../../core/errors/app-error.js';
 import { BLOCKS } from './blocks.js';
+import { Throttle } from '../../core/security/rate-limit.guard.js';
 
 const LineSchema = z.object({
   itemId: z.string().min(1),
@@ -67,6 +69,8 @@ export class OrderingController {
   constructor(private readonly ordering: OrderingService) {}
 
   @Post()
+  // Humans do not place six orders in five minutes; a script does.
+  @Throttle(6, 300)
   async place(@Body() body: unknown) {
     const parsed = PlaceOrderSchema.safeParse(body);
     if (!parsed.success) throw toValidationError(parsed.error);
@@ -91,6 +95,7 @@ export class OrderingController {
    * order *is* changes, only whether the kitchen is still holding for edits.
    */
   @Post(':id/confirm-now')
+  @UseGuards(OrderAccessGuard)
   async confirmNow(@Param('id') id: string) {
     return this.ordering.confirmNow(id);
   }
@@ -103,22 +108,29 @@ export class OrderingController {
    * a fresh one — a window that renews on reload is not a window.
    */
   @Get(':id/payment')
+  @UseGuards(OrderAccessGuard)
   async payment(@Param('id') id: string) {
     return this.ordering.paymentRequestFor(id);
   }
 
-  @Get()
-  async list(@Query('userId') userId?: string) {
-    return { orders: await this.ordering.listOrders(userId) };
-  }
+  /*
+   * `GET /orders` is gone.
+   *
+   * It returned the fifty most recent orders — every customer's name, phone number and delivery
+   * address — to any unauthenticated caller. Nothing legitimate used it: the storefront tracks
+   * orders from its own local records, and staff read the queue through the guarded kitchen
+   * endpoints. It was a leak with no consumer, so the fix is deletion rather than a guard.
+   */
 
   @Get(':id')
+  @UseGuards(OrderAccessGuard)
   async get(@Param('id') id: string) {
     return this.ordering.getOrder(id);
   }
 
   /** Change an order inside the 10-minute grace window. */
   @Patch(':id')
+  @UseGuards(OrderAccessGuard)
   async edit(@Param('id') id: string, @Body() body: unknown) {
     const parsed = EditOrderSchema.safeParse(body);
     if (!parsed.success) throw toValidationError(parsed.error);

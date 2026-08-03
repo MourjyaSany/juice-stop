@@ -58,6 +58,15 @@ export const envSchema = z
     COOKIE_SECURE: bool.default(false),
     CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters'),
 
+    /**
+     * Staff passwords, overriding the development defaults compiled into `kitchen-auth`.
+     *
+     * Optional because the defaults keep a fresh clone working with no setup. Set them on anything
+     * reachable from outside the machine — the defaults are in the public repository.
+     */
+    STAFF_COOK_PASSWORD: z.string().min(6).optional(),
+    STAFF_OWNER_PASSWORD: z.string().min(6).optional(),
+
     // ── OTP ────────────────────────────────────────────────────────────────────────────────────
     OTP_LENGTH: z.coerce.number().int().min(4).max(8).default(6),
     OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),

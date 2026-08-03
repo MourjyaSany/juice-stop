@@ -162,6 +162,7 @@ export default function CheckoutPage() {
           orderNumber: string;
           otp: string;
           pickupToken: string | null;
+          accessToken: string;
           status: 'AWAITING_PAYMENT' | 'PLACED';
           paymentStatus: 'PENDING';
           paymentExpiresAt: number | null;
@@ -174,6 +175,7 @@ export default function CheckoutPage() {
         otp: string;
         pickupToken: string | null;
         payment: PaymentRequestDto | null;
+        accessToken: string;
       }>(
         '/orders',
         {
@@ -208,6 +210,9 @@ export default function CheckoutPage() {
         orderNumber: response.order.orderNumber,
         otp: response.otp,
         pickupToken: response.pickupToken,
+        // Stored with the order and sent on every later read. Without it the API returns 404 —
+        // which is the whole point: an order id alone no longer opens somebody's address.
+        accessToken: response.accessToken,
         status: response.order.status === 'AWAITING_PAYMENT' ? 'AWAITING_PAYMENT' : 'PLACED',
         paymentStatus: 'PENDING',
         paymentExpiresAt:

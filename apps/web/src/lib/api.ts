@@ -147,8 +147,43 @@ export const storefrontApi = {
       '/storefront/payment-methods',
     ),
 
-  paymentFor: (orderId: string) =>
-    api.get<{ order: ApiOrder; payment: PaymentRequestDto }>(`/orders/${orderId}/payment`),
+  paymentFor: (orderId: string, accessToken: string | undefined) =>
+    api.get<{ order: ApiOrder; payment: PaymentRequestDto }>(
+      `/orders/${orderId}/payment`,
+      orderHeaders(accessToken),
+    ),
+};
+
+/**
+ * The per-order capability, as a request header.
+ *
+ * Every read or write of one specific order now carries this. Without it the API answers 404 —
+ * deliberately not 403, because a 403 would confirm the order exists and hand back the enumeration
+ * oracle the token exists to remove.
+ *
+ * Undefined for orders placed before tokens existed. Those requests fail, and the storefront falls
+ * back to its own local record rather than showing an error: losing live status on a stale order is
+ * a much smaller problem than the leak this replaced.
+ */
+export const orderHeaders = (accessToken: string | undefined): RequestInit =>
+  accessToken !== undefined ? { headers: { 'x-order-token': accessToken } } : {};
+
+export const orderApi = {
+  get: (orderId: string, accessToken: string | undefined) =>
+    api.get<ApiOrder>(`/orders/${orderId}`, orderHeaders(accessToken)),
+
+  confirmNow: (orderId: string, accessToken: string | undefined) =>
+    request<ApiOrder>(`/orders/${orderId}/confirm-now`, {
+      method: 'POST',
+      ...orderHeaders(accessToken),
+    }),
+
+  edit: (orderId: string, accessToken: string | undefined, lines: unknown[]) =>
+    request<ApiOrder>(`/orders/${orderId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ lines }),
+      ...orderHeaders(accessToken),
+    }),
 };
 
 export const kitchenApi = {

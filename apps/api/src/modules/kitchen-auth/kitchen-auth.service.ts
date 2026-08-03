@@ -29,7 +29,7 @@ export type StaffRole = 'KITCHEN' | 'ADMIN';
  * second screen would mean two token formats, two guards and two places to get session expiry
  * wrong. Roles are carried in the signed token, so a cook cannot reach revenue by changing a URL.
  */
-const ACCOUNTS: Record<string, { password: string; role: StaffRole }> = {
+const DEFAULT_ACCOUNTS: Record<string, { password: string; role: StaffRole }> = {
   cook: { password: 'cook123', role: 'KITCHEN' },
   owner: { password: 'owner123', role: 'ADMIN' },
 };
@@ -52,8 +52,28 @@ export class KitchenAuthService implements OnModuleInit {
    */
   private readonly secret: string;
 
+  /**
+   * The live accounts, with passwords overridable from the environment.
+   *
+   * The defaults above are published in this repository, so anyone who can reach a deployment can
+   * read them. That is tolerable on a laptop and not tolerable the moment the app is on a public
+   * URL — which it now is. `STAFF_COOK_PASSWORD` / `STAFF_OWNER_PASSWORD` turn a known constant
+   * into a deployment secret without pretending this is the real identity module.
+   */
+  private readonly accounts: Record<string, { password: string; role: StaffRole }>;
+
   constructor(private readonly config: AppConfigService) {
     this.secret = config.raw.JWT_ACCESS_SECRET ?? randomBytes(32).toString('hex');
+    this.accounts = {
+      cook: {
+        password: config.raw.STAFF_COOK_PASSWORD ?? DEFAULT_ACCOUNTS['cook']!.password,
+        role: 'KITCHEN',
+      },
+      owner: {
+        password: config.raw.STAFF_OWNER_PASSWORD ?? DEFAULT_ACCOUNTS['owner']!.password,
+        role: 'ADMIN',
+      },
+    };
   }
 
   onModuleInit(): void {
@@ -66,9 +86,22 @@ export class KitchenAuthService implements OnModuleInit {
       );
     }
     this.logger.warn(
-      `Staff auth is DEVELOPMENT ONLY — accounts: ${Object.keys(ACCOUNTS).join(', ')}. ` +
+      `Staff auth is DEVELOPMENT ONLY — accounts: ${Object.keys(this.accounts).join(', ')}. ` +
         'Replace before production.',
     );
+
+    // Naming the risk beats hiding it. If the published defaults are still live on something the
+    // internet can reach, the operator needs to be told in the one place they will actually look.
+    const usingDefaults = Object.entries(this.accounts).filter(
+      ([name, a]) => a.password === DEFAULT_ACCOUNTS[name]?.password,
+    );
+    if (usingDefaults.length > 0) {
+      this.logger.warn(
+        `Default passwords in use for: ${usingDefaults.map(([n]) => n).join(', ')}. ` +
+          'These are published in the repository — set STAFF_COOK_PASSWORD / STAFF_OWNER_PASSWORD ' +
+          'before exposing this on any public URL.',
+      );
+    }
   }
 
   /**
@@ -79,7 +112,7 @@ export class KitchenAuthService implements OnModuleInit {
    */
   verifyCredentials(username: string, password: string): StaffRole | null {
     let matched: StaffRole | null = null;
-    for (const [name, account] of Object.entries(ACCOUNTS)) {
+    for (const [name, account] of Object.entries(this.accounts)) {
       const userOk = safeEqual(username, name);
       const passOk = safeEqual(password, account.password);
       if (userOk && passOk) matched = account.role;

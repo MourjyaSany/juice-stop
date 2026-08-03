@@ -356,6 +356,18 @@ model Order {
   /// sha256 of the delivery OTP — the plaintext is never stored.
   otpHash      String @map("otp_hash")
 
+  /// sha256 of this order's access token — the capability that lets a device read or change it.
+  ///
+  /// There is no customer identity yet (audit A3), and until there is, "who may see this order?"
+  /// has to be answered by something. A per-order secret handed to the placing device once, and
+  /// required on every subsequent read, is that something: it is the standard guest-checkout
+  /// pattern and it closes A2 without inventing accounts.
+  ///
+  /// Nullable only because orders placed before this existed have none. Those are treated as
+  /// unreadable by anyone but staff — refusing to serve an old order is a far smaller problem than
+  /// serving every customer's address to anyone who asks.
+  accessTokenHash String? @map("access_token_hash")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   /// Optimistic lock: two admins, one order, no lost update.

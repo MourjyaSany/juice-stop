@@ -1,4 +1,4 @@
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@juice-stop/db';
 import {
@@ -252,6 +252,11 @@ export class OrderingService {
     const { editableUntil, promisedAt } = schedule(now, totals.prepSeconds, takeaway);
 
     const otp = String(randomInt(1000, 10_000));
+
+    // The capability that makes this order readable by the device that placed it, and by nobody
+    // else. 32 bytes of CSPRNG output — this is the only thing standing between an order id and
+    // somebody else's address, so it is not a guessable token. Only its hash is stored.
+    const accessToken = randomBytes(32).toString('hex');
     // Server-minted: a client-generated collection code proves nothing at the counter, exactly
     // like the delivery OTP. Ambiguous characters are excluded so it can be read aloud over a
     // noisy counter without "is that a zero or an O?".
@@ -297,6 +302,7 @@ export class OrderingService {
           customerNote: input.customerNote ?? null,
           // Only the hash is stored — the plaintext goes to the customer and nowhere else.
           otpHash: sha256(otp),
+          accessTokenHash: sha256(accessToken),
           items: {
             create: priced.map((p) => ({
               productId: p.productId,
@@ -365,7 +371,7 @@ export class OrderingService {
       // single opportunity to hand them over — withholding them here would mean a customer who
       // pays has no delivery code at all. The storefront simply does not *display* them until the
       // order is real, which costs nothing: an unused 4-digit code for an abandoned order is inert.
-      return { order: serialised, otp, pickupToken, payment };
+      return { order: serialised, otp, pickupToken, payment, accessToken };
     }
 
     // Both of these run *after* the commit, deliberately. An outbox row inside the transaction is
@@ -377,7 +383,7 @@ export class OrderingService {
     );
 
     // OTP and pickup token are returned once, here, and never stored in plaintext or re-served.
-    return { order: serialised, otp, pickupToken, payment: null };
+    return { order: serialised, otp, pickupToken, payment: null, accessToken };
   }
 
   /**

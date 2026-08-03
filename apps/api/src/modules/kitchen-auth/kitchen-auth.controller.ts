@@ -7,6 +7,7 @@ import {
   type RequestWithKitchenSession,
 } from './kitchen-auth.guard.js';
 import { ErrorCode, UnauthorizedError, ValidationError } from '../../core/errors/app-error.js';
+import { Throttle } from '../../core/security/rate-limit.guard.js';
 
 const LoginSchema = z.object({
   username: z.string().min(1).max(64),
@@ -20,6 +21,8 @@ export class KitchenAuthController {
 
   @Post('login')
   @KitchenPublic()
+  // Two known usernames and a short password: unthrottled, this is a free brute-force target.
+  @Throttle(8, 300)
   login(@Body() body: unknown) {
     const parsed = LoginSchema.safeParse(body);
     if (!parsed.success) throw new ValidationError('Enter a username and password.');
