@@ -22,17 +22,12 @@ import { ErrorCode, UnauthorizedError } from '../../core/errors/app-error.js';
 export type StaffRole = 'KITCHEN' | 'ADMIN';
 
 /**
- * The only accounts, and only outside production.
+ * Staff accounts live in the database now — see `StaffService`.
  *
- * Two roles rather than two auth systems. The owner dashboard and the kitchen board are different
- * *applications*, but they are the same *identity problem* — building a second login for the
- * second screen would mean two token formats, two guards and two places to get session expiry
- * wrong. Roles are carried in the signed token, so a cook cannot reach revenue by changing a URL.
+ * They were two usernames and two plaintext passwords in this file, published in a public
+ * repository, and anybody who read it could sign in as the owner. What remains here is the token:
+ * minting it, signing it and checking it. Who exists and what their password is has moved out.
  */
-const DEFAULT_ACCOUNTS: Record<string, { password: string; role: StaffRole }> = {
-  cook: { password: 'cook123', role: 'KITCHEN' },
-  owner: { password: 'owner123', role: 'ADMIN' },
-};
 
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -52,28 +47,8 @@ export class KitchenAuthService implements OnModuleInit {
    */
   private readonly secret: string;
 
-  /**
-   * The live accounts, with passwords overridable from the environment.
-   *
-   * The defaults above are published in this repository, so anyone who can reach a deployment can
-   * read them. That is tolerable on a laptop and not tolerable the moment the app is on a public
-   * URL — which it now is. `STAFF_COOK_PASSWORD` / `STAFF_OWNER_PASSWORD` turn a known constant
-   * into a deployment secret without pretending this is the real identity module.
-   */
-  private readonly accounts: Record<string, { password: string; role: StaffRole }>;
-
   constructor(private readonly config: AppConfigService) {
     this.secret = config.raw.JWT_ACCESS_SECRET ?? randomBytes(32).toString('hex');
-    this.accounts = {
-      cook: {
-        password: config.raw.STAFF_COOK_PASSWORD ?? DEFAULT_ACCOUNTS['cook']!.password,
-        role: 'KITCHEN',
-      },
-      owner: {
-        password: config.raw.STAFF_OWNER_PASSWORD ?? DEFAULT_ACCOUNTS['owner']!.password,
-        role: 'ADMIN',
-      },
-    };
   }
 
   onModuleInit(): void {
@@ -86,38 +61,9 @@ export class KitchenAuthService implements OnModuleInit {
       );
     }
     this.logger.warn(
-      `Staff auth is DEVELOPMENT ONLY — accounts: ${Object.keys(this.accounts).join(', ')}. ` +
-        'Replace before production.',
+      'Staff sessions are signed HMACs with a 12-hour expiry and no revocation list. Accounts and ' +
+        'passwords live in the database (scrypt) and are managed from /admin → Staff.',
     );
-
-    // Naming the risk beats hiding it. If the published defaults are still live on something the
-    // internet can reach, the operator needs to be told in the one place they will actually look.
-    const usingDefaults = Object.entries(this.accounts).filter(
-      ([name, a]) => a.password === DEFAULT_ACCOUNTS[name]?.password,
-    );
-    if (usingDefaults.length > 0) {
-      this.logger.warn(
-        `Default passwords in use for: ${usingDefaults.map(([n]) => n).join(', ')}. ` +
-          'These are published in the repository — set STAFF_COOK_PASSWORD / STAFF_OWNER_PASSWORD ' +
-          'before exposing this on any public URL.',
-      );
-    }
-  }
-
-  /**
-   * Returns the role on success, null on failure.
-   *
-   * Every candidate password is compared even once a match is impossible, so response timing does
-   * not reveal which usernames exist.
-   */
-  verifyCredentials(username: string, password: string): StaffRole | null {
-    let matched: StaffRole | null = null;
-    for (const [name, account] of Object.entries(this.accounts)) {
-      const userOk = safeEqual(username, name);
-      const passOk = safeEqual(password, account.password);
-      if (userOk && passOk) matched = account.role;
-    }
-    return matched;
   }
 
   issueToken(username: string, role: StaffRole): { token: string; session: KitchenSession } {

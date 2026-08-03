@@ -128,7 +128,15 @@ model User {
   phoneVerifiedAt DateTime? @map("phone_verified_at")
   /// Lower-cased on write — SQLite has no citext.
   email           String?   @unique
+  /// Staff sign-in handle. Null for customers, who identify by phone.
+  ///
+  /// Staff live in this table rather than a separate one because `role` already models exactly
+  /// this — CUSTOMER | KITCHEN | RIDER | ADMIN — and a parallel accounts table would mean two
+  /// password paths, two lockout stories and two places to get session expiry wrong.
+  username        String?   @unique
+  /// scrypt, in the format written by `kitchen-auth/password.ts`. Never a plaintext password.
   passwordHash    String?   @map("password_hash")
+  lastLoginAt     DateTime? @map("last_login_at")
   fullName        String?   @map("full_name")
   /// CUSTOMER | KITCHEN | RIDER | ADMIN | SUPER_ADMIN
   role            String    @default("CUSTOMER")

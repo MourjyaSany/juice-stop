@@ -164,6 +164,15 @@ export interface OwnerOverview {
   generatedAt: string;
 }
 
+export interface StaffAccount {
+  id: string;
+  username: string;
+  role: 'KITCHEN' | 'ADMIN';
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
 export interface StoreOverride {
   mode: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED';
   expiresAt: string | null;
@@ -331,6 +340,23 @@ export const admin = {
     isVeg: boolean;
     description?: string;
   }) => request<InventoryItem>('/admin/menu/items', { method: 'POST', body: JSON.stringify(input) }),
+  /* ── Staff logins ─────────────────────────────────────────────────────────────────────────
+     Passwords go up and never come back: the server stores an scrypt hash, so nothing here ever
+     receives one. Creation echoes what the owner typed so it can be handed over once. */
+  staff: () => request<{ staff: StaffAccount[] }>('/admin/staff'),
+
+  createStaff: (input: { username: string; password: string; role: 'KITCHEN' | 'ADMIN' }) =>
+    request<StaffAccount>('/admin/staff', { method: 'POST', body: JSON.stringify(input) }),
+
+  resetStaffPassword: (id: string, password: string) =>
+    request<{ id: string; username: string }>(`/admin/staff/${id}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+
+  removeStaff: (id: string) =>
+    request<{ id: string }>(`/admin/staff/${id}`, { method: 'DELETE' }),
+
   setStoreOverride: (mode: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED', minutes?: number) =>
     request<EffectiveStoreStatus>('/admin/store/override', {
       method: 'POST',

@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { HapticLink as Link } from '@/components/haptic-link';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, m } from 'motion/react';
 import type { Paise } from '@juice-stop/core';

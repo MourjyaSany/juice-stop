@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { HapticLink as Link } from '@/components/haptic-link';
 import { getStoreStatus, orderingBlockedMessage } from '@juice-stop/core';
 import { Hero } from '@/components/landing/hero';
 import { ActiveOrders } from '@/components/landing/active-orders';

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { tapFeedback } from '@/lib/haptics';
 
 /**
  * Shared UI primitives.
@@ -68,6 +69,16 @@ export function Button({
       className={`${base} ${SIZES[size]} ${variant === 'primary' ? 'sheen' : ''} ${className}`}
       style={{ ...variantStyle, ...style }}
       {...props}
+      // Spread first, then this: otherwise a caller's own `onPointerDown` would silently replace
+      // the haptic rather than run alongside it. Both fire, caller's second.
+      //
+      // Haptics live on the shared button rather than at each call site, so "Add · ₹240" in the
+      // item sheet, "Place order" at checkout and every other primary action feel identical
+      // without anyone having to remember. Primary is a commitment; the quieter variants are not.
+      onPointerDown={(event) => {
+        if (props.disabled !== true) tapFeedback(variant === 'primary' ? 'commit' : 'select');
+        props.onPointerDown?.(event);
+      }}
     >
       {children}
     </button>

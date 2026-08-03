@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { HapticLink as Link } from '@/components/haptic-link';
 import { useMemo } from 'react';
 import { Money } from '@juice-stop/core';
 import { priceFrom, useBrowsableItems, type MenuItem } from '@/data/menu';

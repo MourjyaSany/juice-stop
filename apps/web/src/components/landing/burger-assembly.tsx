@@ -94,7 +94,7 @@ export function BurgerAssembly({
 
   const { scrollYProgress } = useScroll({
     target: stageRef,
-    offset: ['start 85%', 'end 25%'],
+    offset: ['start 85%', 'end 10%'],
   });
 
   // Springing the *driver* rather than each layer means one spring simulation feeds twelve

@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { HapticLink as Link } from '@/components/haptic-link';
 import { useMemo } from 'react';
 import { getStoreStatus, Money, MIN_ORDER_PAISE } from '@juice-stop/core';
 import { priceCart, useCart } from '@/store/cart';

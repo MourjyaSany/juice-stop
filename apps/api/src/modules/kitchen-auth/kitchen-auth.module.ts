@@ -1,17 +1,23 @@
 import { Module } from '@nestjs/common';
 import { KitchenAuthService } from './kitchen-auth.service.js';
+import { StaffService } from './staff.service.js';
+import { StaffController } from './staff.controller.js';
 import { KitchenAuthController } from './kitchen-auth.controller.js';
 import { KitchenAuthGuard } from './kitchen-auth.guard.js';
 
 /**
- * ⚠️  Development authentication. See `kitchen-auth.service.ts`.
+ * Staff identity: accounts, passwords, sessions.
  *
- * Exported so kitchen controllers can apply the guard. When real identity lands, this module is
- * deleted and its replacement exports a guard with the same name — nothing else moves.
+ * No longer "development authentication" in the credential sense — accounts live in the database
+ * with scrypt-hashed passwords and are managed by the owner. What is still provisional is the
+ * *session*: a signed, self-expiring HMAC with no revocation list, so removing an account stops the
+ * next sign-in rather than the tab someone already has open.
+ *
+ * Exported so kitchen controllers can apply the guard.
  */
 @Module({
-  controllers: [KitchenAuthController],
-  providers: [KitchenAuthService, KitchenAuthGuard],
-  exports: [KitchenAuthService, KitchenAuthGuard],
+  controllers: [KitchenAuthController, StaffController],
+  providers: [KitchenAuthService, StaffService, KitchenAuthGuard],
+  exports: [KitchenAuthService, StaffService, KitchenAuthGuard],
 })
 export class KitchenAuthModule {}

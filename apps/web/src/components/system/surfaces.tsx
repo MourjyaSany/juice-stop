@@ -224,17 +224,24 @@ export function TactileButton({
         // a plain <button> also sidesteps spreading button attributes onto a motion component.
         transition: 'transform .19s cubic-bezier(0.34, 1.56, 0.64, 1), filter .2s ease',
       }}
-      onPointerDown={() => {
+      {...rest}
+      onPointerDown={(event) => {
         setPressed(true);
         // Fired on press-down, not on click. The physical response has to arrive with the finger
         // landing; on release it reads as a delay rather than as feedback.
         if (haptic !== false && rest.disabled !== true) {
           tapFeedback(haptic ?? (variant === 'primary' ? 'commit' : 'select'));
         }
+        rest.onPointerDown?.(event);
       }}
-      onPointerUp={() => setPressed(false)}
-      onPointerLeave={() => setPressed(false)}
-      {...rest}
+      onPointerUp={(event) => {
+        setPressed(false);
+        rest.onPointerUp?.(event);
+      }}
+      onPointerLeave={(event) => {
+        setPressed(false);
+        rest.onPointerLeave?.(event);
+      }}
     >
       {children}
     </button>

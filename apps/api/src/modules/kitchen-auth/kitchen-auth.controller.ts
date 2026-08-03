@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { KitchenAuthService } from './kitchen-auth.service.js';
+import { StaffService } from './staff.service.js';
 import {
   KitchenAuthGuard,
   KitchenPublic,
@@ -17,19 +18,22 @@ const LoginSchema = z.object({
 @Controller('kitchen/auth')
 @UseGuards(KitchenAuthGuard)
 export class KitchenAuthController {
-  constructor(private readonly auth: KitchenAuthService) {}
+  constructor(
+    private readonly auth: KitchenAuthService,
+    private readonly staff: StaffService,
+  ) {}
 
   @Post('login')
   @KitchenPublic()
   // Two known usernames and a short password: unthrottled, this is a free brute-force target.
   @Throttle(8, 300)
-  login(@Body() body: unknown) {
+  async login(@Body() body: unknown) {
     const parsed = LoginSchema.safeParse(body);
     if (!parsed.success) throw new ValidationError('Enter a username and password.');
 
     const { username, password } = parsed.data;
-    const role = this.auth.verifyCredentials(username, password);
-    if (role === null) {
+    const account = await this.staff.verify(username, password);
+    if (account === null) {
       // One message for both wrong-user and wrong-password. Distinguishing them turns the login
       // form into a username oracle.
       throw new UnauthorizedError(
@@ -38,7 +42,7 @@ export class KitchenAuthController {
       );
     }
 
-    return this.auth.issueToken(username, role);
+    return this.auth.issueToken(username.trim().toLowerCase(), account.role);
   }
 
   /** Lets the dashboard confirm a stored token is still good before rendering. */

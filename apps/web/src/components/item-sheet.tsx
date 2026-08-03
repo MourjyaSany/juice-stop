@@ -5,6 +5,7 @@ import { Money } from '@juice-stop/core';
 import { addOnPrice, type MenuItem } from '@/data/menu';
 import { useCart } from '@/store/cart';
 import { CheckIcon, DietMark, MinusIcon, PlusIcon } from './icons';
+import { tapFeedback } from '@/lib/haptics';
 import { Button } from './ui';
 import { useRegisterOverlay } from '@/store/overlay';
 
@@ -252,7 +253,10 @@ export function ItemSheet({
             >
               <button
                 type="button"
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                onClick={() => {
+                  tapFeedback('remove');
+                  setQuantity((q) => Math.max(1, q - 1));
+                }}
                 disabled={quantity <= 1}
                 aria-label="Decrease quantity"
                 className="pressable flex h-10 w-10 items-center justify-center rounded-[10px] disabled:opacity-30"
@@ -262,7 +266,10 @@ export function ItemSheet({
               <span className="tabular w-6 text-center text-sm font-semibold">{quantity}</span>
               <button
                 type="button"
-                onClick={() => setQuantity((q) => Math.min(30, q + 1))}
+                onClick={() => {
+                  tapFeedback('add');
+                  setQuantity((q) => Math.min(30, q + 1));
+                }}
                 aria-label="Increase quantity"
                 className="pressable flex h-10 w-10 items-center justify-center rounded-[10px]"
               >
