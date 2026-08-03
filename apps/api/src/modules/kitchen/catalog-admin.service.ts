@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { EXTRA_CATEGORY_IDS, EXTRA_GROUPS } from '@juice-stop/menu';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import { RealtimeService } from '../../core/events/realtime.service.js';
 import { SettingsService } from '../../core/settings/settings.service.js';
@@ -56,12 +57,95 @@ export class CatalogAdminService {
   ) {}
 
   async categories() {
+    await this.ensureExtraCategories();
     const rows = await this.prisma.category.findMany({
       where: { isActive: true },
-      orderBy: [{ groupId: 'asc' }, { sortOrder: 'asc' }],
-      select: { id: true, name: true, groupId: true, emoji: true },
+      orderBy: [{ isHidden: 'desc' }, { groupId: 'asc' }, { sortOrder: 'asc' }],
+      select: { id: true, name: true, groupId: true, emoji: true, isHidden: true },
     });
-    return { categories: rows };
+    // Add-on categories first, and labelled. They are the ones an owner actually reaches for
+    // during service — a new drink at the counter, a brand of cigarettes that ran out — while the
+    // ordinary catalogue changes rarely.
+    return {
+      categories: rows.map((c) => ({
+        ...c,
+        name: c.isHidden ? `Add-on · ${c.name}` : c.name,
+      })),
+    };
+  }
+
+  /**
+   * Create the checkout add-on categories if this database predates them.
+   *
+   * The seed builds them for a fresh install, but an existing database has already been seeded and
+   * re-running the seed truncates every table — which would take the night's orders with it. So
+   * they are created on demand instead, idempotently, the first time anything asks.
+   */
+  async ensureExtraCategories(): Promise<void> {
+    const existing = await this.prisma.category.findMany({
+      where: { id: { in: [...EXTRA_CATEGORY_IDS] } },
+      select: { id: true },
+    });
+    const have = new Set(existing.map((c) => c.id));
+    const missing = EXTRA_GROUPS.filter((g) => !have.has(g.categoryId));
+    if (missing.length === 0) return;
+
+    const outlet = await this.prisma.outlet.findFirst({ select: { id: true } });
+    if (outlet === null) return;
+
+    for (const [index, group] of missing.entries()) {
+      await this.prisma.category.create({
+        data: {
+          id: group.categoryId,
+          outletId: outlet.id,
+          groupId: 'snacks',
+          name: group.label,
+          emoji: group.emoji,
+          isHidden: true,
+          sortOrder: 900 + index,
+        },
+      });
+    }
+    await this.catalog.invalidate();
+  }
+
+  /**
+   * The add-on buttons and what is currently inside each.
+   *
+   * Assembled server-side so the storefront does not have to know which categories are add-ons —
+   * it renders whatever it is given, and the owner adding a category item changes the dropdown with
+   * no deploy.
+   */
+  async extraGroups() {
+    await this.ensureExtraCategories();
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        categoryId: { in: [...EXTRA_CATEGORY_IDS] },
+        deletedAt: null,
+        inStock: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: { variants: { where: { isActive: true }, orderBy: { sortOrder: 'asc' }, take: 1 } },
+    });
+
+    return {
+      groups: EXTRA_GROUPS.map((group) => ({
+        categoryId: group.categoryId,
+        label: group.label,
+        emoji: group.emoji,
+        mode: group.mode,
+        items: products
+          .filter((p) => p.categoryId === group.categoryId && p.variants.length > 0)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            variantId: p.variants[0]!.id,
+            pricePaise: p.variants[0]!.pricePaise.toString(),
+            isVeg: p.isVeg,
+          })),
+      })),
+    };
   }
 
   async createItem(input: CreateItemInput) {

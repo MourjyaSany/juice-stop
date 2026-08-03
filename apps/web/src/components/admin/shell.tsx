@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { kitchen, kitchenSession } from '@/lib/kitchen-api';
+import { StaffAtmosphere } from '@/components/staff/glass';
 
 /**
  * Owner chrome.
@@ -83,10 +84,16 @@ export function AdminShell({
   }
 
   return (
-    <div className="flex min-h-dvh" style={{ background: 'var(--color-canvas)' }}>
+    <div className="relative flex min-h-dvh" style={{ background: 'var(--color-canvas)' }}>
+      <StaffAtmosphere />
       <aside
         className="sticky top-0 hidden h-dvh w-[212px] shrink-0 flex-col justify-between border-r py-4 md:flex"
-        style={{ borderColor: 'var(--color-border-subtle)', background: 'var(--color-raised)' }}
+        style={{
+          borderColor: 'rgb(255 255 255 / 0.08)',
+          background: 'linear-gradient(180deg, rgb(255 255 255 / 0.055), rgb(255 255 255 / 0.02))',
+          backdropFilter: 'blur(16px) saturate(1.2)',
+          WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+        }}
       >
         <div>
           <div className="px-5">

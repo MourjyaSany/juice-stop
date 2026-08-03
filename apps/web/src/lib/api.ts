@@ -152,7 +152,32 @@ export const storefrontApi = {
       `/orders/${orderId}/payment`,
       orderHeaders(accessToken),
     ),
+
+  /**
+   * The checkout add-on buttons and what is inside each.
+   *
+   * Fetched rather than bundled, because the owner manages these from `/admin/menu` and a new
+   * drink has to appear behind the Beverage button without a rebuild.
+   */
+  extras: () => api.get<{ groups: ExtraGroupDto[] }>('/storefront/extras'),
 };
+
+export interface ExtraItemDto {
+  id: string;
+  name: string;
+  variantId: string;
+  pricePaise: string;
+  isVeg: boolean;
+}
+
+export interface ExtraGroupDto {
+  categoryId: string;
+  label: string;
+  emoji: string;
+  /** `single` adds on tap; `dropdown` opens a picker. Decided by the server, not by item count. */
+  mode: 'single' | 'dropdown';
+  items: ExtraItemDto[];
+}
 
 /**
  * The per-order capability, as a request header.

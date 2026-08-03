@@ -71,6 +71,7 @@ async function main() {
         name: category.name,
         emoji: category.emoji,
         note: category.note ?? null,
+        isHidden: category.hidden === true,
         sortOrder: order,
       },
     });

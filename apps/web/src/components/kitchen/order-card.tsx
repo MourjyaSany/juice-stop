@@ -4,6 +4,7 @@ import { Money, isFlowStatus, phaseUrgency, type UrgencyLevel } from '@juice-sto
 import type { ApiOrder } from '@/lib/api';
 import { toPaise } from '@/lib/kitchen-api';
 import { OtpGate } from './otp-gate';
+import { StaffPanel, StaffButton } from '@/components/staff/glass';
 
 /**
  * One ticket.
@@ -92,14 +93,16 @@ export function KitchenOrderCard({
   const address = order.address;
 
   return (
-    <article
-      className="rounded-[16px] p-4"
+    <StaffPanel
+      className="p-4"
+      // The spotlight carries the card's own urgency colour, so moving a finger across the board
+      // lights each ticket in the colour it is already flagged with rather than a generic white.
+      accent={`${urgency.colour}22`}
       style={{
-        background: 'var(--color-raised)',
         border: `1px solid ${urgency.colour}44`,
         // The urgency bar is a physical edge on the card, not a tint — visible at a glance and
         // from an angle, which a background wash is not.
-        boxShadow: `inset 4px 0 0 0 ${urgency.colour}`,
+        boxShadow: `inset 4px 0 0 0 ${urgency.colour}, inset 0 1px 0 0 rgb(255 255 255 / 0.10), 0 14px 40px -22px rgb(0 0 0 / 0.9)`,
         opacity: busy ? 0.55 : 1,
       }}
     >
@@ -245,41 +248,38 @@ export function KitchenOrderCard({
       )}
 
       {undo !== null && undo !== undefined && (
-        <button
-          type="button"
+        <StaffButton
+          tone="neutral"
           onClick={undo.onClick}
           disabled={busy}
           title={`Move this order back to ${undo.toLabel}`}
-          className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-[10px] text-xs font-semibold transition-colors duration-150 disabled:opacity-40"
-          style={{ background: 'var(--color-inset)', color: 'var(--color-text-tertiary)' }}
+          // A correction, not a commitment — the lightest pulse in the set.
+          haptic="remove"
+          className="mt-3 min-h-[44px] w-full text-xs"
+          style={{ color: 'var(--color-text-tertiary)' }}
         >
           <span aria-hidden>↶</span> Back to {undo.toLabel}
-        </button>
+        </StaffButton>
       )}
 
       {actions.length > 0 && (
         <div className="mt-3 flex gap-2">
           {actions.map((action) => (
-            <button
+            <StaffButton
               key={action.label}
-              type="button"
+              tone={
+                action.tone === 'danger' ? 'danger' : action.tone === 'quiet' ? 'neutral' : 'primary'
+              }
               onClick={action.onClick}
               disabled={busy}
-              className="flex min-h-[56px] flex-1 items-center justify-center rounded-[12px] font-display text-sm font-bold transition-transform duration-100 active:scale-[0.97] disabled:opacity-40"
-              style={
-                action.tone === 'danger'
-                  ? { background: 'rgb(239 68 68 / 0.14)', color: 'var(--color-danger)' }
-                  : action.tone === 'quiet'
-                    ? { background: 'var(--color-inset)', color: 'var(--color-text-secondary)' }
-                    : { background: 'var(--gradient-brand)', color: '#fff' }
-              }
+              className="min-h-[56px] flex-1 text-sm"
             >
               {action.label}
-            </button>
+            </StaffButton>
           ))}
         </div>
       )}
-    </article>
+    </StaffPanel>
   );
 }
 

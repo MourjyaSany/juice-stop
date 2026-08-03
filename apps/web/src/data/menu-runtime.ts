@@ -90,6 +90,8 @@ interface ApiMenuItem {
   tags: string[];
   inStock: boolean;
   isDeal?: boolean;
+  /** In a hidden category — a checkout add-on, never browsable. */
+  hidden?: boolean;
   availableUntil?: string;
   variants: Array<{ id: string; name: string; pricePaise: string }>;
   addOns: Array<{ id: string; name: string; pricePaise?: string }>;
@@ -111,12 +113,19 @@ export async function refreshRuntimeMenu(): Promise<void> {
     const served = new Set(payload.items.map((i) => i.id));
 
     const extras = payload.items
-      .filter((item) => !known.has(item.id) && item.variants.length > 0)
+      // `hidden` keeps checkout add-ons out of the aisles. Without it, every drink or packet of
+      // crisps the owner adds to an add-on category would also appear as an ordinary menu item.
+      .filter((item) => !known.has(item.id) && item.variants.length > 0 && item.hidden !== true)
       .map(toMenuItem);
 
     // Anything the bundle believes in that the API no longer serves: removed by the owner, or a
     // deal whose window closed.
-    const hiddenIds = new Set(BROWSABLE_ITEMS.filter((i) => !served.has(i.id)).map((i) => i.id));
+    const servedAndBrowsable = new Set(
+      payload.items.filter((i) => i.hidden !== true).map((i) => i.id),
+    );
+    const hiddenIds = new Set(
+      BROWSABLE_ITEMS.filter((i) => !servedAndBrowsable.has(i.id)).map((i) => i.id),
+    );
 
     // Only write when something actually changed, so a poll on an unchanged menu does not re-render
     // a 200-row list.

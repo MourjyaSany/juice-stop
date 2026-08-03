@@ -6,6 +6,7 @@ import { Money, toBusinessDate } from '@juice-stop/core';
 import { ApiError } from '@/lib/api';
 import { admin, toPaise, type OwnerOverview } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
+import { StaffPanel } from '@/components/staff/glass';
 import { Delta, HourlyChart, RankedBars, RevenueBars, SplitBar } from '@/components/admin/charts';
 import { StoreControl } from '@/components/admin/store-control';
 import { useKitchenStream } from '@/components/kitchen/use-kitchen-stream';
@@ -486,13 +487,10 @@ function Metric({
   delta?: number | null | undefined;
 }) {
   return (
-    <div
-      className="rounded-[14px] px-4 py-3.5"
-      style={{
-        background: 'var(--color-raised)',
-        border: '1px solid var(--color-border-subtle)',
-        boxShadow: emphasis ? `inset 0 -2px 0 0 ${accent}` : 'none',
-      }}
+    <StaffPanel
+      className="px-4 py-3.5"
+      accent={`${accent}1f`}
+      style={emphasis ? { boxShadow: `inset 0 -2px 0 0 ${accent}, 0 14px 40px -22px rgb(0 0 0 / 0.9)` } : undefined}
     >
       <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
         {label}
@@ -511,7 +509,7 @@ function Metric({
       {hint !== undefined && (
         <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">{hint}</p>
       )}
-    </div>
+    </StaffPanel>
   );
 }
 
@@ -527,10 +525,7 @@ function Panel({
   className?: string;
 }) {
   return (
-    <section
-      className={`rounded-[16px] p-4 ${className}`}
-      style={{ background: 'var(--color-raised)', border: '1px solid var(--color-border-subtle)' }}
-    >
+    <StaffPanel className={`p-4 ${className}`} accent="rgb(168 85 247 / 0.13)">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
           {title}
@@ -538,7 +533,7 @@ function Panel({
         {action}
       </div>
       {children}
-    </section>
+    </StaffPanel>
   );
 }
 

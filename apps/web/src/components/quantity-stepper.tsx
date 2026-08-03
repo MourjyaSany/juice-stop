@@ -5,6 +5,7 @@ import { AnimatePresence, m } from 'motion/react';
 import { AnimatedCount } from './animated-value';
 import { MinusIcon, PlusIcon } from './icons';
 import { SPRING } from './motion-provider';
+import { tapFeedback } from '@/lib/haptics';
 
 interface Ripple {
   id: number;
@@ -59,12 +60,15 @@ export function QuantityStepper({
     if (disabled) return;
     spawnRipple(e);
     setSparkKey((k) => k + 1);
+    tapFeedback('add');
     onIncrement();
   };
 
   const decrement = (e: React.MouseEvent<HTMLElement>) => {
     if (disabled) return;
     spawnRipple(e);
+    // Lighter than an add: taking something away should not feel like a commitment.
+    tapFeedback('remove');
     onDecrement();
   };
 

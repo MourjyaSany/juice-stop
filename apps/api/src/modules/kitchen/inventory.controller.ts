@@ -191,3 +191,20 @@ export class PopularController {
     return { popularIds: await this.catalogAdmin.popularIds() };
   }
 }
+
+/**
+ * The checkout add-on buttons and their contents.
+ *
+ * Public: it carries prices and names the customer is about to be shown anyway. Served from the
+ * API rather than the bundle so an owner adding a drink at 22:00 changes the dropdown for everyone
+ * mid-service, which is the entire point of managing them from `/admin/menu`.
+ */
+@Controller('storefront/extras')
+export class ExtrasController {
+  constructor(private readonly catalogAdmin: CatalogAdminService) {}
+
+  @Get()
+  async extras() {
+    return this.catalogAdmin.extraGroups();
+  }
+}

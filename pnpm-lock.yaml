@@ -38,6 +38,9 @@ importers:
       '@juice-stop/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@juice-stop/menu':
+        specifier: workspace:*
+        version: link:../../packages/menu
       '@nestjs/common':
         specifier: ^11.0.0
         version: 11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)

@@ -35,6 +35,8 @@ export interface MenuItemDto {
   inStock: boolean;
   /** A time-limited offer rather than a standing item. Drives the deal styling on the storefront. */
   isDeal: boolean;
+  /** In a hidden category — a checkout add-on. Never listed in the browsable menu. */
+  hidden: boolean;
   /** When the offer ends, so the customer can be shown a countdown rather than a silent removal. */
   availableUntil?: string;
   variants: MenuVariantDto[];
@@ -127,6 +129,9 @@ export class CatalogService {
     ]);
 
     const groupByCategory = new Map(categories.map((c) => [c.id, c.groupId]));
+    // Which categories never appear while browsing. Checkout add-ons live here, and the owner can
+    // add items to them at runtime — so the flag has to travel rather than being a build constant.
+    const hiddenCategories = new Set(categories.filter((c) => c.isHidden).map((c) => c.id));
 
     return {
       menuVersion: 1,
@@ -148,6 +153,7 @@ export class CatalogService {
         tags: safeJsonArray(p.tagsJson),
         inStock: p.inStock,
         isDeal: p.isDeal,
+        hidden: hiddenCategories.has(p.categoryId),
         ...(p.availableUntil !== null ? { availableUntil: p.availableUntil.toISOString() } : {}),
         variants: p.variants.map((v) => ({
           id: v.id,

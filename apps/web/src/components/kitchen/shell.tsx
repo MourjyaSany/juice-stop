@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { kitchen, kitchenSession } from '@/lib/kitchen-api';
+import { StaffAtmosphere } from '@/components/staff/glass';
 import type { StreamState } from './use-kitchen-stream';
 
 /**
@@ -62,7 +63,8 @@ export function KitchenShell({
   }
 
   return (
-    <div className="flex min-h-dvh" style={{ background: 'var(--color-canvas)' }}>
+    <div className="relative flex min-h-dvh" style={{ background: 'var(--color-canvas)' }}>
+      <StaffAtmosphere />
       {/* ── Sidebar ─────────────────────────────────────────────────────────────────────────
           Icon-only under 1024px so a tablet in portrait keeps its width for order cards. */}
       <aside

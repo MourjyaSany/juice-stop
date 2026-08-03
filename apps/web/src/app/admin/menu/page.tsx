@@ -5,6 +5,7 @@ import { Money } from '@juice-stop/core';
 import { ApiError } from '@/lib/api';
 import { admin, toPaise, type ManageableItem } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
+import { StaffPanel } from '@/components/staff/glass';
 import { AddItemForm } from '@/components/admin/add-item';
 
 /**
@@ -575,10 +576,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section
-      className="rounded-[16px] p-4"
-      style={{ background: 'var(--color-raised)', border: '1px solid var(--color-border-subtle)' }}
-    >
+    <StaffPanel className="p-4" accent="rgb(168 85 247 / 0.13)">
       <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">
         {title}
       </h2>
@@ -588,7 +586,7 @@ function Panel({
         </p>
       )}
       <div className={hint === undefined ? 'mt-3' : ''}>{children}</div>
-    </section>
+    </StaffPanel>
   );
 }
 

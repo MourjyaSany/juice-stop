@@ -7,6 +7,7 @@ import {
   CatalogAdminController,
   InventoryController,
   PopularController,
+  ExtrasController,
 } from './inventory.controller.js';
 import { KitchenStatsController } from './kitchen-stats.controller.js';
 import {
@@ -31,6 +32,7 @@ import { SettingsModule } from '../../core/settings/settings.module.js';
     AvailabilityController,
     CatalogAdminController,
     PopularController,
+    ExtrasController,
     KitchenStatsController,
     KitchenStreamController,
     StorefrontStreamController,

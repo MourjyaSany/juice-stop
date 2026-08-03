@@ -2,7 +2,7 @@
   "name": "@juice-stop/api",
   "version": "0.0.0",
   "private": true,
-  "description": "Juice Stop backend — NestJS modular monolith, three process roles (api | realtime | worker).",
+  "description": "Juice Stop backend \u2014 NestJS modular monolith, three process roles (api | realtime | worker).",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",
@@ -17,6 +17,7 @@
   "dependencies": {
     "@juice-stop/core": "workspace:*",
     "@juice-stop/db": "workspace:*",
+    "@juice-stop/menu": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",

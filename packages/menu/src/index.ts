@@ -126,8 +126,45 @@ export const CATEGORIES: readonly MenuCategory[] = [
 
   { id: 'combo', groupId: 'combos', name: 'Combo', emoji: '🎁' },
 
-  { id: 'extras', groupId: 'snacks', name: 'Extras', emoji: '➕', hidden: true },
+  // Checkout extras, one category per button. Hidden from browsing — their moment is at checkout.
+  { id: 'extras-mayo', groupId: 'snacks', name: 'Mayo', emoji: '🥣', hidden: true },
+  { id: 'extras-beverage', groupId: 'snacks', name: 'Beverage', emoji: '🥤', hidden: true },
+  { id: 'extras-smoke', groupId: 'snacks', name: 'Smoke', emoji: '🚬', hidden: true },
+  { id: 'extras-chips', groupId: 'snacks', name: 'Chips', emoji: '🥔', hidden: true },
+  { id: 'extras-biscuit', groupId: 'snacks', name: 'Biscuit', emoji: '🍪', hidden: true },
 ];
+
+/**
+ * The checkout add-on buttons, in display order.
+ *
+ * **One category per button.** That is the whole design: the owner manages what is inside a
+ * dropdown by adding and removing items in that category from `/admin/menu`, using the same screen
+ * and the same code path as the rest of the menu. There is no separate "extras" editor to keep in
+ * step, and a new drink appears at checkout the moment it is added.
+ *
+ * `single` renders as a plain stepper because a group of one does not deserve a dropdown — Mayo is
+ * either on the order or it is not. `dropdown` opens a picker. The mode is a property of the group
+ * rather than a count, so adding a second mayo variant later is a one-word change here instead of
+ * a surprise change in behaviour.
+ */
+export interface ExtraGroup {
+  /** The category whose items fill this button. */
+  categoryId: string;
+  label: string;
+  emoji: string;
+  mode: 'single' | 'dropdown';
+}
+
+export const EXTRA_GROUPS: readonly ExtraGroup[] = [
+  { categoryId: 'extras-mayo', label: 'Mayo', emoji: '🥣', mode: 'single' },
+  { categoryId: 'extras-beverage', label: 'Beverage', emoji: '🥤', mode: 'dropdown' },
+  { categoryId: 'extras-smoke', label: 'Smoke', emoji: '🚬', mode: 'dropdown' },
+  { categoryId: 'extras-chips', label: 'Chips', emoji: '🥔', mode: 'dropdown' },
+  { categoryId: 'extras-biscuit', label: 'Biscuit', emoji: '🍪', mode: 'dropdown' },
+];
+
+/** Category ids whose items never appear in the browsable menu. */
+export const EXTRA_CATEGORY_IDS: readonly string[] = EXTRA_GROUPS.map((g) => g.categoryId);
 
 /** Categories a customer can browse. */
 export const BROWSABLE_CATEGORIES: readonly MenuCategory[] = CATEGORIES.filter(
@@ -495,9 +532,20 @@ const COMBO = [
  * in a hidden category because their moment is at checkout, not while browsing.
  */
 const EXTRAS = [
-  one('extras', 'snacks', 'Mayo', 20, { veg: true, prep: 20 }),
-  one('extras', 'snacks', 'Kurkure', 20, { veg: true, prep: 20 }),
-  one('extras', 'snacks', 'Compact Cigarette', 15, { veg: true, prep: 20 }),
+  one('extras-mayo', 'snacks', 'Mayo', 20, { veg: true, prep: 20 }),
+
+  one('extras-beverage', 'snacks', 'Coke (300ml)', 40, { veg: true, prep: 20 }),
+  one('extras-beverage', 'snacks', 'Sprite (300ml)', 40, { veg: true, prep: 20 }),
+  one('extras-beverage', 'snacks', 'Water (1L)', 20, { veg: true, prep: 20 }),
+
+  one('extras-smoke', 'snacks', 'Compact Cigarette', 15, { veg: true, prep: 20 }),
+  one('extras-smoke', 'snacks', 'Gold Flake', 20, { veg: true, prep: 20 }),
+
+  one('extras-chips', 'snacks', 'Kurkure', 20, { veg: true, prep: 20 }),
+  one('extras-chips', 'snacks', 'Lays Classic', 20, { veg: true, prep: 20 }),
+
+  one('extras-biscuit', 'snacks', 'Good Day', 10, { veg: true, prep: 20 }),
+  one('extras-biscuit', 'snacks', 'Oreo Pack', 20, { veg: true, prep: 20 }),
 ];
 
 /* ── Export ─────────────────────────────────────────────────────────────────────────────────── */

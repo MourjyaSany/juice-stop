@@ -181,6 +181,14 @@ model Category {
   note      String?
   sortOrder Int       @default(0) @map("sort_order")
   isActive  Boolean   @default(true) @map("is_active")
+  /// Never shown while browsing the menu.
+  ///
+  /// Checkout add-ons live in hidden categories: they are ordinary products so they price, snapshot
+  /// and reach the kitchen through the same path as everything else, but their moment is at
+  /// checkout rather than in the aisles. Held here rather than only in the menu package because the
+  /// owner can now create items at runtime, and the storefront has to know which of them to keep
+  /// out of the browsable list without shipping a new build.
+  isHidden  Boolean   @default(false) @map("is_hidden")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 

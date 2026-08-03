@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { m, useReducedMotion } from 'motion/react';
+import { tapFeedback, type HapticPattern } from '@/lib/haptics';
 
 /**
  * Surface primitives.
@@ -179,10 +180,19 @@ export function TactileButton({
   className = '',
   style,
   children,
+  haptic,
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'glass' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * Which pulse to fire, or `false` for none.
+   *
+   * Defaults by variant rather than being required at every call site: a primary button is the
+   * commit action on almost every screen it appears on, and making each caller remember would
+   * guarantee an inconsistent app.
+   */
+  haptic?: HapticPattern | false;
 }) {
   const [pressed, setPressed] = useState(false);
 
@@ -214,7 +224,14 @@ export function TactileButton({
         // a plain <button> also sidesteps spreading button attributes onto a motion component.
         transition: 'transform .19s cubic-bezier(0.34, 1.56, 0.64, 1), filter .2s ease',
       }}
-      onPointerDown={() => setPressed(true)}
+      onPointerDown={() => {
+        setPressed(true);
+        // Fired on press-down, not on click. The physical response has to arrive with the finger
+        // landing; on release it reads as a delay rather than as feedback.
+        if (haptic !== false && rest.disabled !== true) {
+          tapFeedback(haptic ?? (variant === 'primary' ? 'commit' : 'select'));
+        }
+      }}
       onPointerUp={() => setPressed(false)}
       onPointerLeave={() => setPressed(false)}
       {...rest}
