@@ -5,6 +5,7 @@ import { Money } from '@juice-stop/core';
 import { ApiError } from '@/lib/api';
 import { admin, toPaise, type ActivityEvent } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
+import { PizzaLoader } from '@/components/pizza-loader';
 
 /**
  * Live activity feed.
@@ -81,7 +82,7 @@ export default function AdminActivityPage() {
       )}
 
       {loading ? (
-        <p className="py-20 text-center text-sm text-[var(--color-text-tertiary)]">Loading…</p>
+        <div className="py-16"><PizzaLoader size={84} /></div>
       ) : events.length === 0 ? (
         <div
           className="rounded-[18px] px-6 py-20 text-center"

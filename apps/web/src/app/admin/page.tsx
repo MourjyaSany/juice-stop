@@ -6,6 +6,7 @@ import { Money, toBusinessDate } from '@juice-stop/core';
 import { ApiError } from '@/lib/api';
 import { admin, toPaise, type OwnerOverview } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
+import { PizzaLoader } from '@/components/pizza-loader';
 import { StaffPanel } from '@/components/staff/glass';
 import { Delta, HourlyChart, RankedBars, RevenueBars, SplitBar } from '@/components/admin/charts';
 import { StoreControl } from '@/components/admin/store-control';
@@ -163,7 +164,7 @@ export default function AdminOverviewPage() {
       </section>
 
       {loading && data === null ? (
-        <p className="py-20 text-center text-sm text-[var(--color-text-tertiary)]">Loading…</p>
+        <div className="py-16"><PizzaLoader size={84} /></div>
       ) : data === null ? null : data.orderCount === 0 ? (
         <EmptyNight />
       ) : (

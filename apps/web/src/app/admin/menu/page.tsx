@@ -5,6 +5,7 @@ import { Money } from '@juice-stop/core';
 import { ApiError } from '@/lib/api';
 import { admin, toPaise, type ManageableItem } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
+import { PizzaLoader } from '@/components/pizza-loader';
 import { StaffPanel } from '@/components/staff/glass';
 import { AddItemForm } from '@/components/admin/add-item';
 
@@ -130,7 +131,7 @@ export default function AdminMenuPage() {
       )}
 
       {loading ? (
-        <p className="py-20 text-center text-sm text-[var(--color-text-tertiary)]">Loading…</p>
+        <div className="py-16"><PizzaLoader size={84} /></div>
       ) : (
         <div className="space-y-4">
           <DealsPanel deals={deals} now={now} busyId={busyId} onCreated={load} onRemove={remove} />

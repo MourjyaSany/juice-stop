@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { admin, type StaffAccount } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
+import { PizzaLoader } from '@/components/pizza-loader';
 import { StaffPanel, StaffButton } from '@/components/staff/glass';
 
 /**
@@ -101,7 +102,7 @@ export default function AdminStaffPage() {
           </h2>
 
           {loading ? (
-            <p className="py-10 text-center text-sm text-[var(--color-text-tertiary)]">Loading…</p>
+            <div className="py-16"><PizzaLoader size={84} /></div>
           ) : (
             <ul className="mt-3 space-y-2">
               {active.map((account) => (

@@ -434,3 +434,74 @@ body::after {
 .pb-nav {
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
 }
+
+/* ── Loading pizza ──────────────────────────────────────────────────────────────────────────────
+   A pizza turning while its slices are laid on and taken off again.
+
+   Kept deliberately quiet: this sits on a dark page at 1am and its job is to say "a moment", not
+   to be the brightest thing on screen. Every value below is low-alpha and warm rather than a
+   saturated accent — a loading indicator louder than the content it stands in for reads as an
+   error. Only `opacity` and `transform` animate, so it stays on the compositor while the page it
+   covers does real work.
+
+   The global reduced-motion rule above freezes these at their first frame; the slices settle fully
+   laid, so it degrades to a static pizza rather than to a bare circle. */
+
+.pizza-loader {
+  opacity: 0.62;
+}
+
+.pizza-loader__base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  /* Crust ring, then sauce. Both sit under the slices so the shape is a pizza even in the instant
+     when no slice is showing. */
+  background:
+    radial-gradient(circle at 50% 50%, rgb(255 138 61 / 0.10) 0 62%, transparent 63%),
+    radial-gradient(circle at 50% 50%, transparent 0 72%, rgb(255 138 61 / 0.22) 73% 84%, transparent 85%);
+}
+
+.pizza-loader__spin {
+  position: absolute;
+  inset: 0;
+  /* Slow. A fast spin reads as urgency, and nothing here is urgent. */
+  animation: pizza-spin 7s linear infinite;
+}
+
+.pizza-loader__slice {
+  position: absolute;
+  inset: 0;
+  /* A 42° wedge with a 3° gap either side, cut with a polygon so there is no image and no extra
+     element per slice. The gap is what makes these read as separate slices rather than as a disc
+     filling up. Three points along the rim approximate the arc closely enough at this size. */
+  clip-path: polygon(50% 50%, 51.2% 4%, 67.6% 7.5%, 81.7% 16.6%);
+  background: linear-gradient(150deg, rgb(255 138 61 / 0.55), rgb(255 61 129 / 0.34) 60%, rgb(168 85 247 / 0.24));
+  opacity: 0;
+  animation: pizza-slice 2.6s var(--ease-in-out-smooth) infinite;
+}
+
+@keyframes pizza-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Laid on, held, then taken off — with the per-slice delay this makes the count rise around the
+   pie and fall back the same way, rather than every wedge blinking together. */
+@keyframes pizza-slice {
+  0% {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  22%,
+  52% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  78%,
+  100% {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}

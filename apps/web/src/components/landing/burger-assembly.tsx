@@ -64,23 +64,23 @@ interface AssemblyLayer {
  * `width × 1.25 × (h / w)`, so changing the hero's aspect ratio means retuning this column.
  */
 const LAYERS: readonly AssemblyLayer[] = [
-  { slug: 'bottom-bun', alt: 'Toasted bottom bun', w: 404, h: 209, top: 79, width: 47.7, z: 1, fromX: 0, fromY: 40, fromRotate: -6, enter: 0.0, settle: 0.16 },
-  { slug: 'patty', alt: 'Flame-grilled patty', w: 386, h: 183, top: 70, width: 45.6, z: 2, fromX: 36, fromY: 26, fromRotate: 16, enter: 0.08, settle: 0.26 },
-  { slug: 'cheese', alt: 'Melted cheddar', w: 329, h: 167, top: 64.5, width: 48, z: 3, fromX: -30, fromY: -24, fromRotate: -14, enter: 0.15, settle: 0.34 },
-  { slug: 'tomato', alt: 'Tomato slices', w: 355, h: 182, top: 56.5, width: 41.9, z: 4, fromX: 34, fromY: -22, fromRotate: 18, enter: 0.23, settle: 0.42 },
-  { slug: 'lettuce', alt: 'Crisp lettuce', w: 374, h: 215, top: 51, width: 50, z: 5, fromX: -32, fromY: -26, fromRotate: -16, enter: 0.3, settle: 0.5 },
-  { slug: 'onion', alt: 'Red onion rings', w: 312, h: 143, top: 45.5, width: 36.9, z: 6, fromX: -36, fromY: -18, fromRotate: -20, enter: 0.36, settle: 0.56 },
-  { slug: 'pickles', alt: 'Dill pickles', w: 311, h: 165, top: 41, width: 36.7, z: 7, fromX: 32, fromY: -20, fromRotate: 22, enter: 0.42, settle: 0.62 },
-  { slug: 'sauce', alt: 'Burger sauce', w: 383, h: 171, top: 36.5, width: 45.2, z: 8, fromX: -34, fromY: 22, fromRotate: -18, enter: 0.48, settle: 0.68 },
-  { slug: 'top-bun', alt: 'Sesame brioche top bun', w: 474, h: 243, top: 24, width: 56, z: 9, fromX: 0, fromY: -46, fromRotate: 8, enter: 0.56, settle: 0.78 },
+  { slug: 'bottom-bun', alt: 'Toasted bottom bun', w: 404, h: 209, top: 79, width: 47.7, z: 1, fromX: 0, fromY: 40, fromRotate: -6, enter: 0.0, settle: 0.12 },
+  { slug: 'patty', alt: 'Flame-grilled patty', w: 386, h: 183, top: 70, width: 45.6, z: 2, fromX: 36, fromY: 26, fromRotate: 16, enter: 0.06, settle: 0.20 },
+  { slug: 'cheese', alt: 'Melted cheddar', w: 329, h: 167, top: 64.5, width: 48, z: 3, fromX: -30, fromY: -24, fromRotate: -14, enter: 0.12, settle: 0.27 },
+  { slug: 'tomato', alt: 'Tomato slices', w: 355, h: 182, top: 56.5, width: 41.9, z: 4, fromX: 34, fromY: -22, fromRotate: 18, enter: 0.18, settle: 0.33 },
+  { slug: 'lettuce', alt: 'Crisp lettuce', w: 374, h: 215, top: 51, width: 50, z: 5, fromX: -32, fromY: -26, fromRotate: -16, enter: 0.23, settle: 0.39 },
+  { slug: 'onion', alt: 'Red onion rings', w: 312, h: 143, top: 45.5, width: 36.9, z: 6, fromX: -36, fromY: -18, fromRotate: -20, enter: 0.28, settle: 0.44 },
+  { slug: 'pickles', alt: 'Dill pickles', w: 311, h: 165, top: 41, width: 36.7, z: 7, fromX: 32, fromY: -20, fromRotate: 22, enter: 0.33, settle: 0.48 },
+  { slug: 'sauce', alt: 'Burger sauce', w: 383, h: 171, top: 36.5, width: 45.2, z: 8, fromX: -34, fromY: 22, fromRotate: -18, enter: 0.37, settle: 0.53 },
+  { slug: 'top-bun', alt: 'Sesame brioche top bun', w: 474, h: 243, top: 24, width: 56, z: 9, fromX: 0, fromY: -46, fromRotate: 8, enter: 0.44, settle: 0.61 },
   // Particles ride over the finished build rather than joining the stack. Both sit inboard of the
   // edges they drift toward — the stage clips overflow, and a crumb sliced by the rounded corner
   // reads as a rendering bug rather than as a crumb.
   //
   // They now land before the compaction window opens, so nothing is still flying while the stack
   // is squeezing shut.
-  { slug: 'sesame', alt: '', w: 292, h: 140, top: 15, width: 42, z: 10, fromX: 0, fromY: -30, fromRotate: 0, enter: 0.68, settle: 0.84 },
-  { slug: 'crumbs', alt: '', w: 414, h: 222, top: 80, width: 52, z: 11, fromX: 0, fromY: 24, fromRotate: 0, enter: 0.72, settle: 0.86 },
+  { slug: 'sesame', alt: '', w: 292, h: 140, top: 15, width: 42, z: 10, fromX: 0, fromY: -30, fromRotate: 0, enter: 0.53, settle: 0.65 },
+  { slug: 'crumbs', alt: '', w: 414, h: 222, top: 80, width: 52, z: 11, fromX: 0, fromY: 24, fromRotate: 0, enter: 0.56, settle: 0.67 },
 ];
 
 /**
@@ -104,9 +104,15 @@ const COMPACTION = 0.26;
 /** The vertical centre the stack collapses toward — midpoint of the bun-to-bun span. */
 const STACK_CENTRE = 51.5;
 
-/** Scroll window over which the squeeze happens: after the last ingredient lands, before the end. */
-const COMPACT_FROM = 0.86;
-const COMPACT_TO = 0.98;
+/**
+ * Scroll window over which the squeeze happens: after the last ingredient lands, well before the end.
+ *
+ * Ending at 0.84 rather than 0.98 leaves the last sixth of the range as slack. That headroom is the
+ * point — the sparkle fires by ~0.9, so somebody scrolling briskly still sees the finish rather
+ * than arriving at a burger that is already done and wondering what they missed.
+ */
+const COMPACT_FROM = 0.68;
+const COMPACT_TO = 0.84;
 
 export function BurgerAssembly({
   className = '',
@@ -120,9 +126,20 @@ export function BurgerAssembly({
   const stageRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
 
+  /**
+   * The scroll window the build is choreographed across.
+   *
+   * This used to run `start 85%` → `end 25%`, which meant progress only reached 1 once the burger's
+   * bottom edge had climbed to a quarter of the way up the viewport — by which point the finished
+   * stack was half off the top of the screen. The payoff happened where nobody was looking.
+   *
+   * Now it completes at `end 78%`: the instant the whole burger is sitting comfortably inside the
+   * viewport rather than leaving it. The range is shorter, so the assembly reads as brisk instead
+   * of as something that has to be dragged out of the page.
+   */
   const { scrollYProgress } = useScroll({
     target: stageRef,
-    offset: ['start 85%', 'end 25%'],
+    offset: ['start 95%', 'end 78%'],
   });
 
   // Springing the *driver* rather than each layer means one spring simulation feeds twelve
