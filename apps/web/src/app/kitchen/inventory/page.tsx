@@ -6,6 +6,8 @@ import { ApiError } from '@/lib/api';
 import { kitchen, toPaise, type InventoryItem, type StockPreset } from '@/lib/kitchen-api';
 import { KitchenShell } from '@/components/kitchen/shell';
 import { useKitchenStream } from '@/components/kitchen/use-kitchen-stream';
+import { AddItemForm } from '@/components/admin/add-item';
+import { kitchenSession } from '@/lib/kitchen-api';
 
 /**
  * Inventory.
@@ -32,6 +34,17 @@ export default function KitchenInventoryPage() {
   const [filter, setFilter] = useState<'all' | 'unavailable' | 'limited'>('all');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<Set<string>>(new Set());
+  const [isOwner, setIsOwner] = useState(false);
+
+  // The add-item form is owner-only. The API enforces that regardless — this just avoids showing a
+  // cook a control that can only ever answer 403.
+  useEffect(() => {
+    if (kitchenSession.get() === null) return;
+    void kitchen
+      .session()
+      .then((r) => setIsOwner(r.session.role === 'ADMIN'))
+      .catch(() => undefined);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +168,15 @@ export default function KitchenInventoryPage() {
         </header>
       }
     >
+      {isOwner && (
+        <section
+          className="mb-4 rounded-[14px] p-4"
+          style={{ background: 'var(--color-raised)', border: '1px solid var(--color-border-subtle)' }}
+        >
+          <AddItemForm onCreated={() => void load()} />
+        </section>
+      )}
+
       {error !== null && (
         <p
           role="alert"

@@ -6,10 +6,10 @@ import { Money } from '@juice-stop/core';
 import {
   BROWSABLE_CATEGORIES as CATEGORIES,
   GROUPS,
-  BROWSABLE_ITEMS as ITEMS,
   TAG_LABELS,
   hasChoices,
   priceFrom,
+  useBrowsableItems,
   type GroupId,
   type MenuItem,
 } from '@/data/menu';
@@ -30,6 +30,8 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
   // The prop is the server-rendered schedule; the hook is what the API says right now, including
   // a manual override the owner set thirty seconds ago. The hook wins once it has an answer.
   const takingOrders = useAcceptingOrders(acceptingOrders);
+  // Static catalogue plus anything the owner added since this bundle was built.
+  const ITEMS = useBrowsableItems();
   const hydrated = useHydrated();
   const lines = useCart((s) => s.lines);
   const totals = useMemo(() => priceCart(lines), [lines]);
@@ -62,7 +64,7 @@ export function MenuBrowser({ acceptingOrders }: { acceptingOrders: boolean }) {
       if (categoryId !== null && item.categoryId !== categoryId) return false;
       return true;
     });
-  }, [groupId, categoryId, query, vegOnly]);
+  }, [groupId, categoryId, query, vegOnly, ITEMS]);
 
   const sections = useMemo(() => {
     const byCategory = new Map<string, MenuItem[]>();

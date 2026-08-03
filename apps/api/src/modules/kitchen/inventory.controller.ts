@@ -1,8 +1,19 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { InventoryService } from './inventory.service.js';
-import { KitchenAuthGuard } from '../kitchen-auth/kitchen-auth.guard.js';
+import { CatalogAdminService } from './catalog-admin.service.js';
+import { KitchenAuthGuard, RequireRole } from '../kitchen-auth/kitchen-auth.guard.js';
 import { ValidationError } from '../../core/errors/app-error.js';
+
+const CreateItemSchema = z.object({
+  name: z.string().trim().min(2).max(60),
+  categoryId: z.string().min(1),
+  // Rupees, with up to two decimals — what an owner actually types.
+  rupees: z.number().positive().max(100_000),
+  isVeg: z.boolean(),
+  description: z.string().trim().max(160).optional(),
+  prepTimeSeconds: z.number().int().min(60).max(3600).optional(),
+});
 
 const UpdateSchema = z
   .object({
@@ -52,5 +63,39 @@ export class AvailabilityController {
   @Get()
   async availability() {
     return this.inventory.availability();
+  }
+}
+
+/**
+ * Menu composition — owner only.
+ *
+ * Deliberately a separate controller from the inventory one above. Stock toggles are a cook's
+ * tool used dozens of times a shift; adding a product to the menu is an owner decision made rarely.
+ * `@RequireRole('ADMIN')` keeps that boundary enforced rather than implied.
+ */
+@Controller('admin/menu')
+@UseGuards(KitchenAuthGuard)
+@RequireRole('ADMIN')
+export class CatalogAdminController {
+  constructor(private readonly catalogAdmin: CatalogAdminService) {}
+
+  @Get('categories')
+  async categories() {
+    return this.catalogAdmin.categories();
+  }
+
+  @Post('items')
+  async createItem(@Body() body: unknown) {
+    const parsed = CreateItemSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? 'Check the item details.');
+    }
+    const { rupees, ...rest } = parsed.data;
+    return this.catalogAdmin.createItem({
+      ...rest,
+      // Rupees on the wire because that is what an owner types; paise in the database, because
+      // money is never a float here (ADR-003). One conversion, at the boundary.
+      pricePaise: BigInt(Math.round(rupees * 100)),
+    });
   }
 }

@@ -13,6 +13,7 @@ import { QuantityStepper } from './quantity-stepper';
 import { CheckIcon, ClockIcon, DietMark, PlusIcon, SearchIcon, TrashIcon } from './icons';
 import { Button } from './ui';
 import { SPRING } from './motion-provider';
+import { useRegisterOverlay } from '@/store/overlay';
 
 /**
  * Edit a placed order, inside the grace window.
@@ -34,6 +35,8 @@ export function OrderEditSheet({
   onClose: () => void;
 }) {
   const applyEdit = useOrders((s) => s.applyEdit);
+  // Same reason as the other sheets — the nav would cover this one's confirm button too.
+  useRegisterOverlay(open);
   const [draft, setDraft] = useState<CartLine[]>(order.sourceLines);
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');

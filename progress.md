@@ -29,6 +29,8 @@ Full reasoning lives in [`docs/`](./docs); the pre-phase audit is
 | Owner dashboard | ✅ | Repeat customers labelled *estimated* (by phone); refunds render **Not tracked** rather than a fake zero |
 | Owner analytics (hourly, fulfilment, payment mix, lost orders, period comparison) | ✅ | — |
 | Manual shop open/close override | ✅ | Bounded, audited, realtime. Closes the server-side ordering gap too |
+| Owner adds menu items | ✅ | Storefront merges API-added items over the build-time catalogue |
+| Modal / bottom-nav overlap | ✅ | All four sheets now withdraw the nav — was only two |
 | Smart inventory | 🔵 Next | — |
 | Kitchen rush mode | ⬜ | — |
 | Order timers | ✅ | Kitchen and customer now grade through one `phaseUrgency` in `core` |

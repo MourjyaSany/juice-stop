@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { InventoryService } from './inventory.service.js';
+import { CatalogAdminService } from './catalog-admin.service.js';
 import { KitchenStatsService } from './kitchen-stats.service.js';
-import { AvailabilityController, InventoryController } from './inventory.controller.js';
+import {
+  AvailabilityController,
+  CatalogAdminController,
+  InventoryController,
+} from './inventory.controller.js';
 import { KitchenStatsController } from './kitchen-stats.controller.js';
 import {
   KitchenStreamController,
@@ -22,11 +27,12 @@ import { CatalogModule } from '../catalog/catalog.module.js';
   controllers: [
     InventoryController,
     AvailabilityController,
+    CatalogAdminController,
     KitchenStatsController,
     KitchenStreamController,
     StorefrontStreamController,
   ],
-  providers: [InventoryService, KitchenStatsService],
+  providers: [InventoryService, KitchenStatsService, CatalogAdminService],
   exports: [InventoryService],
 })
 export class KitchenModule {}

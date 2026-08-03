@@ -91,6 +91,13 @@ export interface InventoryItem {
 
 export type StockPreset = 'UNLIMITED' | 'TEN' | 'FIVE' | 'OUT';
 
+export interface MenuCategoryOption {
+  id: string;
+  name: string;
+  groupId: string;
+  emoji: string;
+}
+
 export interface OwnerOverview {
   window: { from: string; to: string };
   revenuePaise: string;
@@ -238,6 +245,14 @@ export const admin = {
     request<OwnerOverview>(`/admin/overview${dateQuery(from, to)}`),
   activity: () => request<{ events: ActivityEvent[] }>('/admin/activity'),
   storeStatus: () => request<EffectiveStoreStatus>('/admin/store/override'),
+  menuCategories: () => request<{ categories: MenuCategoryOption[] }>('/admin/menu/categories'),
+  createMenuItem: (input: {
+    name: string;
+    categoryId: string;
+    rupees: number;
+    isVeg: boolean;
+    description?: string;
+  }) => request<InventoryItem>('/admin/menu/items', { method: 'POST', body: JSON.stringify(input) }),
   setStoreOverride: (mode: 'AUTO' | 'FORCE_OPEN' | 'FORCE_CLOSED', minutes?: number) =>
     request<EffectiveStoreStatus>('/admin/store/override', {
       method: 'POST',

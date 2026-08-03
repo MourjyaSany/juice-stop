@@ -14,6 +14,7 @@ import { TactileButton } from './system/surfaces';
 import { BagIcon, TrashIcon } from './icons';
 import { SPRING } from './motion-provider';
 import { useRegisterOverlay } from '@/store/overlay';
+import { useAcceptingOrders } from '@/components/storefront-live';
 
 /**
  * Cart as a slide-over.
@@ -34,7 +35,10 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const totals = useMemo(() => priceCart(lines), [lines]);
   const status = getStoreStatus();
 
-  const canCheckout = totals.itemCount > 0 && totals.meetsMinimum && status.acceptingOrders;
+  // Server-confirmed, so a manual "Open now" from the owner unlocks this without a refresh. The
+  // API enforces the window regardless — this only decides whether the button looks pressable.
+  const takingOrders = useAcceptingOrders(status.acceptingOrders);
+  const canCheckout = totals.itemCount > 0 && totals.meetsMinimum && takingOrders;
 
   // Escape closes, and the body is locked so the menu behind does not scroll under the sheet.
   useEffect(() => {
@@ -185,7 +189,7 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
                   {Money.format(MIN_ORDER_PAISE)} minimum.
                 </p>
               )}
-              {!status.acceptingOrders && (
+              {!takingOrders && (
                 <p
                   className="mt-3 rounded-[12px] px-3.5 py-2.5 text-xs"
                   style={{ background: 'rgb(255 107 26 / 0.12)', color: 'var(--color-orange-500)' }}

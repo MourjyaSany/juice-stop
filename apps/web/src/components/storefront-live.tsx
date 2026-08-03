@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { useEffect } from 'react';
+import { refreshRuntimeMenu } from '@/data/menu-runtime';
 
 const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
 
@@ -101,6 +102,9 @@ export function StorefrontLive() {
   useEffect(() => {
     let cancelled = false;
 
+    // Items the owner added after this bundle was built.
+    void refreshRuntimeMenu();
+
     void fetch(`${BASE}/storefront/store-status`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { acceptingOrders: boolean; override: { mode: StoreState['overrideMode'] } } | null) => {
@@ -134,9 +138,16 @@ export function StorefrontLive() {
     source.addEventListener('inventory.changed', (event) => {
       try {
         const parsed = JSON.parse((event as MessageEvent<string>).data) as {
-          data: { productId: string; inStock: boolean; stockRemaining: number | null };
+          data: {
+            productId: string;
+            inStock: boolean;
+            stockRemaining: number | null;
+            created?: boolean;
+          };
         };
         applyOne(parsed.data.productId, parsed.data.inStock, parsed.data.stockRemaining);
+        // A brand-new item arrives on this same channel; pull the catalogue so it can render.
+        if (parsed.data.created === true) void refreshRuntimeMenu();
       } catch {
         // A malformed frame is not worth tearing the connection down for.
       }

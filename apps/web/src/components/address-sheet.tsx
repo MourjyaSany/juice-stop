@@ -7,6 +7,7 @@ import { isValidIndianPhone, useProfile, type SavedAddress } from '@/store/profi
 import { CheckIcon, ChevronRightIcon, MapPinIcon } from './icons';
 import { Button, Field, Input } from './ui';
 import { SPRING } from './motion-provider';
+import { useRegisterOverlay } from '@/store/overlay';
 
 interface Draft {
   label: string;
@@ -49,6 +50,9 @@ export function AddressSheet({
   onClose: () => void;
 }) {
   const profile = useProfile();
+  // Hides the bottom nav while the sheet is up. Without this the tab bar floats over the sheet's
+  // bottom edge and covers the Save button — which is the whole reason someone opened it.
+  useRegisterOverlay(open);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [touched, setTouched] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);

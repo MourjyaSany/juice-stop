@@ -9,6 +9,7 @@ import { BillSummary } from '@/components/bill-summary';
 import { QuantityStepper } from '@/components/quantity-stepper';
 import { AnimatedPaise } from '@/components/animated-value';
 import { Card, EmptyState, Skeleton, useHydrated } from '@/components/ui';
+import { useAcceptingOrders } from '@/components/storefront-live';
 
 export default function CartPage() {
   const hydrated = useHydrated();
@@ -19,7 +20,10 @@ export default function CartPage() {
   const totals = useMemo(() => priceCart(lines), [lines]);
   const status = getStoreStatus();
 
-  const canCheckout = totals.itemCount > 0 && totals.meetsMinimum && status.acceptingOrders;
+  // Server-confirmed, so a manual "Open now" from the owner unlocks this without a refresh. The
+  // API enforces the window regardless — this only decides whether the button looks pressable.
+  const takingOrders = useAcceptingOrders(status.acceptingOrders);
+  const canCheckout = totals.itemCount > 0 && totals.meetsMinimum && takingOrders;
 
   return (
     <main className="page-in relative min-h-dvh">
@@ -143,7 +147,7 @@ export default function CartPage() {
                 {Money.format(MIN_ORDER_PAISE)} minimum.
               </p>
             )}
-            {!status.acceptingOrders && (
+            {!takingOrders && (
               <p
                 className="mt-4 rounded-[12px] px-4 py-3 text-sm"
                 style={{ background: 'rgb(255 107 26 / 0.12)', color: 'var(--color-orange-500)' }}

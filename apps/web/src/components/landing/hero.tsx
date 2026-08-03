@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { m, useReducedMotion } from 'motion/react';
 import { Money, MIN_ORDER_PAISE, type StoreStatus } from '@juice-stop/core';
 import { AuroraField, GridVeil, ParticleField, StatusPill, StickerField } from '@/components/system';
+import { useAcceptingOrders } from '@/components/storefront-live';
 import { BurgerAssembly } from './burger-assembly';
 import { ArrowRightIcon, ClockIcon, MapPinIcon } from '@/components/icons';
 import { SPRING } from '@/components/motion-provider';
@@ -30,7 +31,9 @@ export function Hero({ status }: { status: StoreStatus }) {
   const hours = Math.floor(remaining / 3600);
   const minutes = Math.floor((remaining % 3600) / 60);
   const seconds = remaining % 60;
-  const open = status.acceptingOrders;
+  // The pill and the CTA both follow the server, so an owner opening early is visible on the
+  // landing page rather than only after someone reaches the menu.
+  const open = useAcceptingOrders(status.acceptingOrders);
 
   return (
     <section className="relative overflow-hidden pb-16 pt-6">
