@@ -32,6 +32,8 @@ export type RealtimeEventType =
   | 'order.awaiting_payment'
   | 'order.status_changed'
   | 'inventory.changed'
+  /** The owner reshaped the menu — a new deal, a removal, or a new Popular tonight line-up. */
+  | 'menu.changed'
   | 'store.changed';
 
 export interface RealtimeEvent {

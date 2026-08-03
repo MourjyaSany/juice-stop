@@ -53,6 +53,24 @@ export function useAcceptingOrders(localFallback: boolean): boolean {
   return live ?? localFallback;
 }
 
+/**
+ * The owner's curated "Popular tonight" line-up.
+ *
+ * `null` means "not fetched yet or not curated", and the rail falls back to the catalogue's own
+ * bestseller tags. That distinction matters: an owner who has pinned nothing should see the sensible
+ * default, not an empty rail, and a network failure should look the same as no curation rather than
+ * blanking a section of the landing page.
+ */
+interface PopularState {
+  ids: string[] | null;
+  setIds: (ids: string[]) => void;
+}
+
+export const usePopularLive = create<PopularState>()((set) => ({
+  ids: null,
+  setIds: (ids) => set({ ids }),
+}));
+
 interface AvailabilityState {
   soldOut: Set<string>;
   lowStock: Record<string, number>;
@@ -121,6 +139,16 @@ export function StorefrontLive() {
       })
       .catch(() => undefined);
 
+    const loadPopular = () =>
+      fetch(`${BASE}/storefront/popular`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { popularIds: string[] } | null) => {
+          if (!cancelled && data !== null) usePopularLive.getState().setIds(data.popularIds);
+        })
+        .catch(() => undefined);
+
+    void loadPopular();
+
     const source = new EventSource(`${BASE}/storefront/stream`);
 
     // The owner opening early is only useful if customers already looking at the menu find out.
@@ -133,6 +161,14 @@ export function StorefrontLive() {
       } catch {
         // A malformed frame is not worth tearing the connection down for.
       }
+    });
+
+    // The owner reshaping the menu — a new deal, a removal, a new line-up — reaches customers who
+    // already have the page open. Refetching both is two small requests; trying to patch the
+    // catalogue from the event payload would put a second code path in charge of what the menu is.
+    source.addEventListener('menu.changed', () => {
+      void loadPopular();
+      void refreshRuntimeMenu();
     });
 
     source.addEventListener('inventory.changed', (event) => {

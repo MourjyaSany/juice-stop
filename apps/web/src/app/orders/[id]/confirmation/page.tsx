@@ -181,7 +181,7 @@ export default function ConfirmationPage() {
               icon={<CheckIcon size={16} />}
               label={
                 order.paymentMethod === 'COD'
-                  ? 'Pay the rider at your door'
+                  ? 'Pay the rider in cash'
                   : `Paid · ${order.paymentMethod}`
               }
               value={Money.format(toPaise(order.totalPaiseStr))}

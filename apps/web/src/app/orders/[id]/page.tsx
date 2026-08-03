@@ -257,12 +257,20 @@ export default function OrderTrackingPage() {
                 animate={false}
               />
               {owesCashOnDelivery(order) ? (
-                <p
-                  className="mt-2.5 rounded-[10px] px-3 py-2 text-right text-xs font-semibold"
-                  style={{ background: 'rgb(234 179 8 / 0.12)', color: 'var(--color-warning)' }}
+                <div
+                  className="mt-2.5 rounded-[10px] px-3 py-2.5"
+                  style={{ background: 'rgb(234 179 8 / 0.12)' }}
                 >
-                  Have {Money.format(toPaise(order.totalPaiseStr))} ready — you pay the rider
-                </p>
+                  <p
+                    className="text-right text-xs font-semibold"
+                    style={{ color: 'var(--color-warning)' }}
+                  >
+                    Have {Money.format(toPaise(order.totalPaiseStr))} in cash ready
+                  </p>
+                  <p className="mt-0.5 text-right text-[11px] text-[var(--color-text-tertiary)]">
+                    The rider can&apos;t take UPI, cards or wallets
+                  </p>
+                </div>
               ) : (
                 <p className="mt-2.5 text-right text-xs text-[var(--color-text-tertiary)]">
                   Paid by {order.paymentMethod}

@@ -540,11 +540,30 @@ export default function CheckoutPage() {
           {/* What happens after the tap, stated before it.
               The kitchen genuinely does not start a UPI order until the money lands, so promising
               anything else here would be setting up the first broken status of the night. */}
-          <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--color-text-tertiary)]">
-            {method === 'UPI'
-              ? 'You’ll get a QR for the exact amount. The kitchen starts once the payment is confirmed.'
-              : `Keep ${Money.format(totals.totalPaise)} ready — the rider collects it at your door.`}
-          </p>
+          {method === 'UPI' ? (
+            <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--color-text-tertiary)]">
+              You&apos;ll get a QR for the exact amount. The kitchen starts once the payment is
+              confirmed.
+            </p>
+          ) : (
+            <div
+              className="mt-2.5 rounded-[12px] px-3.5 py-3"
+              style={{
+                background: 'rgb(234 179 8 / 0.10)',
+                border: '1px solid rgb(234 179 8 / 0.26)',
+              }}
+            >
+              <p className="text-[11px] font-bold" style={{ color: 'var(--color-warning)' }}>
+                Cash only at the door — keep {Money.format(totals.totalPaise)} ready
+              </p>
+              {/* Stated before the order, not discovered at the door. The rider carries no card
+                  machine and no QR, so a customer planning to scan on arrival has no way to pay. */}
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--color-text-secondary)]">
+                Riders cannot take UPI, cards or wallets. If you&apos;d rather pay digitally, choose
+                UPI above and pay in the app now.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* ── Note ─────────────────────────────────────────────────────────────────────────── */}

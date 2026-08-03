@@ -19,6 +19,7 @@ import { kitchen, kitchenSession } from '@/lib/kitchen-api';
 
 const NAV = [
   { href: '/admin', label: 'Overview', icon: '📊' },
+  { href: '/admin/menu', label: 'Menu & deals', icon: '🔥' },
   { href: '/admin/activity', label: 'Activity', icon: '⚡' },
   { href: '/kitchen', label: 'Kitchen board', icon: '🎟️' },
 ] as const;

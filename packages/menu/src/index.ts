@@ -51,6 +51,16 @@ export interface MenuItem {
   tags: string[];
   prepTimeSeconds: number;
   inStock: boolean;
+  /**
+   * A time-limited offer the owner created at runtime.
+   *
+   * Absent on every item in this file — nothing transcribed from the price list is a deal — and
+   * present only on items that arrive from the API. Optional rather than required so the ~200
+   * literals below stay unchanged.
+   */
+  isDeal?: boolean;
+  /** ISO instant the offer ends. Only ever set alongside `isDeal`. */
+  availableUntil?: string;
 }
 
 export type GroupId = 'food' | 'snacks' | 'drinks' | 'combos';

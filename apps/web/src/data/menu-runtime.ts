@@ -28,18 +28,34 @@ const BASE = process.env['NEXT_PUBLIC_API_URL'] ?? '/api/v1';
 
 interface RuntimeMenuState {
   extras: MenuItem[];
-  setExtras: (items: MenuItem[]) => void;
+  /**
+   * Bundled items the API no longer serves.
+   *
+   * The owner can take anything off the menu, including items baked into this build — and a
+   * removed item that keeps rendering is worse than one that never existed, because a customer can
+   * add it to a cart and only discover at checkout that it is gone. The API's menu is the truth;
+   * the bundle is a cache of it, so anything the cache holds and the truth does not is hidden.
+   *
+   * Empty when the API is unreachable, which is the right degradation: the full bundle renders,
+   * exactly as it did before any of this existed.
+   */
+  hiddenIds: Set<string>;
+  apply: (extras: MenuItem[], hiddenIds: Set<string>) => void;
 }
 
 const useRuntimeMenu = create<RuntimeMenuState>()((set) => ({
   extras: [],
-  setExtras: (extras) => set({ extras }),
+  hiddenIds: new Set<string>(),
+  apply: (extras, hiddenIds) => set({ extras, hiddenIds }),
 }));
 
-/** Static catalogue plus anything the API has that the bundle does not. */
+/** The catalogue as it stands right now: bundle, minus removals, plus anything new. */
 export function useBrowsableItems(): MenuItem[] {
   const extras = useRuntimeMenu((s) => s.extras);
-  return extras.length === 0 ? [...BROWSABLE_ITEMS] : [...BROWSABLE_ITEMS, ...extras];
+  const hiddenIds = useRuntimeMenu((s) => s.hiddenIds);
+
+  if (extras.length === 0 && hiddenIds.size === 0) return [...BROWSABLE_ITEMS];
+  return [...BROWSABLE_ITEMS.filter((i) => !hiddenIds.has(i.id)), ...extras];
 }
 
 /**
@@ -50,7 +66,17 @@ export function useBrowsableItems(): MenuItem[] {
  * runs in a plain function.
  */
 export function findItemAnywhere(id: string): MenuItem | undefined {
-  return findStaticItem(id) ?? useRuntimeMenu.getState().extras.find((i) => i.id === id);
+  const { extras, hiddenIds } = useRuntimeMenu.getState();
+  // Removed items stay resolvable on purpose. The cart prices through here, and a line referencing
+  // a just-removed item must still render its name and price so the customer can be told what to
+  // drop — returning undefined would silently vanish the line and change the total with no
+  // explanation. The server refuses the order either way.
+  return extras.find((i) => i.id === id) ?? findStaticItem(id) ?? undefined;
+}
+
+/** Has the owner taken this off the menu since this build shipped? */
+export function isRemovedFromMenu(id: string): boolean {
+  return useRuntimeMenu.getState().hiddenIds.has(id);
 }
 
 interface ApiMenuItem {
@@ -63,6 +89,8 @@ interface ApiMenuItem {
   prepTimeSeconds: number;
   tags: string[];
   inStock: boolean;
+  isDeal?: boolean;
+  availableUntil?: string;
   variants: Array<{ id: string; name: string; pricePaise: string }>;
   addOns: Array<{ id: string; name: string; pricePaise?: string }>;
 }
@@ -80,16 +108,26 @@ export async function refreshRuntimeMenu(): Promise<void> {
     const payload = (await response.json()) as { items: ApiMenuItem[] };
 
     const known = new Set(BROWSABLE_ITEMS.map((i) => i.id));
+    const served = new Set(payload.items.map((i) => i.id));
+
     const extras = payload.items
       .filter((item) => !known.has(item.id) && item.variants.length > 0)
       .map(toMenuItem);
 
-    // Only write when the set actually changed, so a poll on an unchanged menu does not re-render
+    // Anything the bundle believes in that the API no longer serves: removed by the owner, or a
+    // deal whose window closed.
+    const hiddenIds = new Set(BROWSABLE_ITEMS.filter((i) => !served.has(i.id)).map((i) => i.id));
+
+    // Only write when something actually changed, so a poll on an unchanged menu does not re-render
     // a 200-row list.
-    const current = useRuntimeMenu.getState().extras;
-    const same =
-      current.length === extras.length && current.every((c, i) => c.id === extras[i]?.id);
-    if (!same) useRuntimeMenu.getState().setExtras(extras);
+    const current = useRuntimeMenu.getState();
+    const sameExtras =
+      current.extras.length === extras.length &&
+      current.extras.every((c, i) => c.id === extras[i]?.id);
+    const sameHidden =
+      current.hiddenIds.size === hiddenIds.size &&
+      [...hiddenIds].every((id) => current.hiddenIds.has(id));
+    if (!sameExtras || !sameHidden) current.apply(extras, hiddenIds);
   } catch {
     // Offline, or the API is down. The static catalogue still renders — which is exactly the
     // degradation this design was chosen for.
@@ -119,5 +157,7 @@ function toMenuItem(item: ApiMenuItem): MenuItem {
     tags: item.tags,
     prepTimeSeconds: item.prepTimeSeconds,
     inStock: item.inStock,
+    ...(item.isDeal === true ? { isDeal: true } : {}),
+    ...(item.availableUntil !== undefined ? { availableUntil: item.availableUntil } : {}),
   } as MenuItem;
 }

@@ -167,7 +167,7 @@ export function KitchenOrderCard({
             className="text-[11px] font-bold uppercase tracking-[0.1em]"
             style={{ color: 'var(--color-warning)' }}
           >
-            Collect on delivery
+            Collect cash
           </span>
           <span
             className="tabular font-display text-lg font-bold"

@@ -8,6 +8,7 @@ import { admin, toPaise, type OwnerOverview } from '@/lib/kitchen-api';
 import { AdminShell } from '@/components/admin/shell';
 import { Delta, HourlyChart, RankedBars, RevenueBars, SplitBar } from '@/components/admin/charts';
 import { StoreControl } from '@/components/admin/store-control';
+import { useKitchenStream } from '@/components/kitchen/use-kitchen-stream';
 
 /**
  * Owner dashboard.
@@ -15,9 +16,15 @@ import { StoreControl } from '@/components/admin/store-control';
  * Reads only — every figure is derived from orders and the status audit trail, so this screen can
  * never become a second source of truth about what happened in the shop.
  *
- * Refreshes on a slow timer rather than over SSE. The kitchen stream carries every order's name,
- * address and phone; reusing it here to save a poll would put customer PII on a channel this
- * screen does not need it on. Revenue that is thirty seconds stale costs nothing.
+ * **Live, and now genuinely so.** This used to poll on a slow timer only, on the reasoning that the
+ * kitchen stream carries customer names and addresses. That reasoning does not survive contact with
+ * this screen: the owner already reads customer names in the activity feed and full contact details
+ * in the CSV export, so the stream tells them nothing they are not authorised to see. It is gated
+ * server-side on a signed ADMIN role either way.
+ *
+ * So: events drive an immediate refresh, and the timer stays as a floor. Same shape as the kitchen
+ * board — REST is the truth, events are the accelerant — because an owner watching a rush wants the
+ * revenue figure to move when an order lands, not up to thirty seconds later.
  */
 
 const REFRESH_MS = 30_000;
@@ -51,6 +58,18 @@ export default function AdminOverviewPage() {
     return () => clearInterval(id);
   }, [load]);
 
+  // Every order event refetches rather than patching state from the payload. Two code paths in
+  // charge of what a revenue figure says is how a dashboard starts disagreeing with the database.
+  const stream = useKitchenStream(
+    useCallback(
+      (event: { type: string }) => {
+        if (event.type === 'ping') return;
+        void load();
+      },
+      [load],
+    ),
+  );
+
   return (
     <AdminShell
       header={
@@ -64,7 +83,30 @@ export default function AdminOverviewPage() {
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="font-display text-lg font-bold">Overview</h1>
+              <h1 className="flex items-center gap-2 font-display text-lg font-bold">
+                Overview
+                {/* Honest connection lamp, same as the kitchen board's. A dashboard that looks live
+                    while its stream is dead is worse than one that admits it is polling. */}
+                <span
+                  title={stream === 'live' ? 'Live' : stream === 'connecting' ? 'Connecting' : 'Polling only'}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em]"
+                  style={{
+                    background: stream === 'live' ? 'rgb(34 197 94 / 0.16)' : 'var(--color-inset)',
+                    color:
+                      stream === 'live' ? 'var(--color-success)' : 'var(--color-text-tertiary)',
+                  }}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${stream === 'live' ? 'animate-pulse' : ''}`}
+                    style={{
+                      background:
+                        stream === 'live' ? 'var(--color-success)' : 'var(--color-text-tertiary)',
+                    }}
+                    aria-hidden
+                  />
+                  {stream === 'live' ? 'Live' : stream === 'connecting' ? '…' : 'Polling'}
+                </span>
+              </h1>
               <p className="tabular text-xs text-[var(--color-text-tertiary)]">
                 {window_.from === window_.to ? window_.from : `${window_.from} → ${window_.to}`}
                 {' · service nights, not calendar days'}
@@ -393,7 +435,7 @@ export default function AdminOverviewPage() {
 
           <p className="tabular pb-2 text-center text-[11px] text-[var(--color-text-tertiary)]">
             Updated {new Date(data.generatedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}
-            {' · refreshes every 30s'}
+            {stream === 'live' ? ' · live' : ' · refreshes every 30s'}
           </p>
         </div>
       )}

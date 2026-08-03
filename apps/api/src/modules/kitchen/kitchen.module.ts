@@ -6,6 +6,7 @@ import {
   AvailabilityController,
   CatalogAdminController,
   InventoryController,
+  PopularController,
 } from './inventory.controller.js';
 import { KitchenStatsController } from './kitchen-stats.controller.js';
 import {
@@ -14,6 +15,7 @@ import {
 } from './kitchen-stream.controller.js';
 import { KitchenAuthModule } from '../kitchen-auth/kitchen-auth.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { SettingsModule } from '../../core/settings/settings.module.js';
 
 /**
  * Kitchen operations: inventory, header metrics and the realtime stream.
@@ -23,11 +25,12 @@ import { CatalogModule } from '../catalog/catalog.module.js';
  * duplication that invariant exists to prevent. The kitchen's order endpoints live beside it.
  */
 @Module({
-  imports: [KitchenAuthModule, CatalogModule],
+  imports: [KitchenAuthModule, CatalogModule, SettingsModule],
   controllers: [
     InventoryController,
     AvailabilityController,
     CatalogAdminController,
+    PopularController,
     KitchenStatsController,
     KitchenStreamController,
     StorefrontStreamController,

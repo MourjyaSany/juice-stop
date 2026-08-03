@@ -1,8 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { InventoryService } from './inventory.service.js';
-import { CatalogAdminService } from './catalog-admin.service.js';
-import { KitchenAuthGuard, RequireRole } from '../kitchen-auth/kitchen-auth.guard.js';
+import { CatalogAdminService, MAX_POPULAR } from './catalog-admin.service.js';
+import {
+  KitchenAuthGuard,
+  RequireRole,
+  type RequestWithKitchenSession,
+} from '../kitchen-auth/kitchen-auth.guard.js';
 import { ValidationError } from '../../core/errors/app-error.js';
 
 const CreateItemSchema = z.object({
@@ -13,6 +17,26 @@ const CreateItemSchema = z.object({
   isVeg: z.boolean(),
   description: z.string().trim().max(160).optional(),
   prepTimeSeconds: z.number().int().min(60).max(3600).optional(),
+});
+
+const CreateDealSchema = z.object({
+  name: z.string().trim().min(2).max(60),
+  description: z.string().trim().max(200).optional(),
+  rupees: z.number().positive().max(100_000),
+  isVeg: z.boolean(),
+  /**
+   * How long the offer runs. Null is open-ended.
+   *
+   * Capped at 30 days: a "deal" nobody has revisited in a month is just a menu price, and an offer
+   * that quietly runs forever is exactly the kind of thing that gets discovered in an audit rather
+   * than decided by an owner. Same reasoning as the store override's expiry.
+   */
+  durationHours: z.number().int().min(1).max(24 * 30).nullable(),
+  prepTimeSeconds: z.number().int().min(60).max(3600).optional(),
+});
+
+const PopularSchema = z.object({
+  ids: z.array(z.string().min(1)).max(MAX_POPULAR),
 });
 
 const UpdateSchema = z
@@ -97,5 +121,73 @@ export class CatalogAdminController {
       // money is never a float here (ADR-003). One conversion, at the boundary.
       pricePaise: BigInt(Math.round(rupees * 100)),
     });
+  }
+
+  /** Everything the owner can manage, lapsed deals included so they can be seen and cleared. */
+  @Get('items')
+  async items() {
+    return this.catalogAdmin.manageableItems();
+  }
+
+  @Post('deals')
+  async createDeal(@Body() body: unknown) {
+    const parsed = CreateDealSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues[0]?.message ?? 'Check the deal details.');
+    }
+    const { rupees, ...rest } = parsed.data;
+    return this.catalogAdmin.createDeal({
+      ...rest,
+      pricePaise: BigInt(Math.round(rupees * 100)),
+    });
+  }
+
+  /**
+   * Take an item or deal off the menu.
+   *
+   * A soft delete — placed orders keep their link to it, so last night's sales stay attributable.
+   */
+  @Delete('items/:productId')
+  async removeItem(
+    @Param('productId') productId: string,
+    @Req() request: RequestWithKitchenSession,
+  ) {
+    const username = request.kitchenSession?.username;
+    return this.catalogAdmin.removeItem(
+      productId,
+      username !== undefined ? { username } : {},
+    );
+  }
+
+  @Put('popular')
+  async setPopular(@Body() body: unknown, @Req() request: RequestWithKitchenSession) {
+    const parsed = PopularSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.error.issues[0]?.message ?? `Pick at most ${MAX_POPULAR} items.`,
+      );
+    }
+    const username = request.kitchenSession?.username;
+    return this.catalogAdmin.setPopular(
+      parsed.data.ids,
+      username !== undefined ? { username } : {},
+    );
+  }
+}
+
+/**
+ * The storefront's read of the owner's Popular tonight line-up.
+ *
+ * Public, and it exposes nothing a customer cannot see by opening the menu. Separate from
+ * `GET /menu` because the landing page needs only a handful of ids and should not pull the whole
+ * catalogue to render one rail.
+ */
+@Controller('storefront/popular')
+export class PopularController {
+  constructor(private readonly catalogAdmin: CatalogAdminService) {}
+
+  @Get()
+  async popular() {
+    return { popularIds: await this.catalogAdmin.popularIds() };
   }
 }

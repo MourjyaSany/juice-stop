@@ -33,6 +33,10 @@ export interface MenuItemDto {
   prepTimeSeconds: number;
   tags: string[];
   inStock: boolean;
+  /** A time-limited offer rather than a standing item. Drives the deal styling on the storefront. */
+  isDeal: boolean;
+  /** When the offer ends, so the customer can be shown a countdown rather than a silent removal. */
+  availableUntil?: string;
   variants: MenuVariantDto[];
   addOns: MenuAddOnDto[];
 }
@@ -71,18 +75,50 @@ export class CatalogService {
    * unavailable, so a cache outage costs latency rather than availability.
    */
   async getMenu(): Promise<MenuResponseDto> {
-    return this.redis.remember(MENU_CACHE_KEY, MENU_CACHE_TTL_SECONDS, () => this.loadMenu());
+    // The cache must never outlive the soonest deal.
+    //
+    // A five-minute TTL over a deal that ends in ninety seconds would keep selling it at the offer
+    // price after it lapsed — and an offer the shop has to honour because the cache said so is a
+    // real cost, not a display bug. Capping the TTL to the next expiry costs one indexed query on
+    // a cache miss and makes the window exact.
+    return this.redis.remember(MENU_CACHE_KEY, await this.cacheTtlSeconds(), () => this.loadMenu());
+  }
+
+  /** The standard TTL, or less when a deal ends sooner. */
+  private async cacheTtlSeconds(): Promise<number> {
+    const soonest = await this.prisma.product.findFirst({
+      where: { deletedAt: null, availableUntil: { gt: new Date() } },
+      orderBy: { availableUntil: 'asc' },
+      select: { availableUntil: true },
+    });
+    if (soonest?.availableUntil == null) return MENU_CACHE_TTL_SECONDS;
+
+    const secondsLeft = Math.ceil((soonest.availableUntil.getTime() - Date.now()) / 1000);
+    // Floor of 5s so a deal in its final seconds cannot turn the cache off entirely and send every
+    // request straight to the database.
+    return Math.max(5, Math.min(MENU_CACHE_TTL_SECONDS, secondsLeft));
   }
 
   private async loadMenu(): Promise<MenuResponseDto> {
+    const now = new Date();
+
     const [categories, products] = await Promise.all([
       this.prisma.category.findMany({
         where: { isActive: true },
         orderBy: { sortOrder: 'asc' },
       }),
       this.prisma.product.findMany({
-        where: { deletedAt: null },
-        orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }],
+        where: {
+          deletedAt: null,
+          // The offer window, enforced where the menu is read. Null on either side means unbounded,
+          // which is every ordinary item — so this costs nothing for the other ~200 products.
+          AND: [
+            { OR: [{ availableFrom: null }, { availableFrom: { lte: now } }] },
+            { OR: [{ availableUntil: null }, { availableUntil: { gt: now } }] },
+          ],
+        },
+        // Deals first: an offer nobody scrolls to is an offer that does not sell.
+        orderBy: [{ isDeal: 'desc' }, { categoryId: 'asc' }, { sortOrder: 'asc' }],
         include: {
           variants: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } },
           addOns: { where: { isAvailable: true } },
@@ -111,6 +147,8 @@ export class CatalogService {
         prepTimeSeconds: p.prepTimeSeconds,
         tags: safeJsonArray(p.tagsJson),
         inStock: p.inStock,
+        isDeal: p.isDeal,
+        ...(p.availableUntil !== null ? { availableUntil: p.availableUntil.toISOString() } : {}),
         variants: p.variants.map((v) => ({
           id: v.id,
           name: v.name,

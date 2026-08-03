@@ -98,6 +98,29 @@ export interface MenuCategoryOption {
   emoji: string;
 }
 
+/**
+ * An item as the **owner** sees it, which is not the same as what a customer sees.
+ *
+ * `expired` and a past `availableUntil` are the whole point: a lapsed deal is invisible on the
+ * storefront but must stay visible here, or the owner cannot tell the difference between an offer
+ * that ended and one they never created.
+ */
+export interface ManageableItem {
+  id: string;
+  name: string;
+  description: string | null;
+  categoryId: string;
+  categoryName: string;
+  groupId: string;
+  isVeg: boolean;
+  inStock: boolean;
+  stockRemaining: number | null;
+  pricePaise: string;
+  isDeal: boolean;
+  availableUntil: string | null;
+  expired: boolean;
+}
+
 export interface OwnerOverview {
   window: { from: string; to: string };
   revenuePaise: string;
@@ -275,6 +298,32 @@ export const admin = {
   activity: () => request<{ events: ActivityEvent[] }>('/admin/activity'),
   storeStatus: () => request<EffectiveStoreStatus>('/admin/store/override'),
   menuCategories: () => request<{ categories: MenuCategoryOption[] }>('/admin/menu/categories'),
+
+  /** Everything manageable, including lapsed deals the storefront has already hidden. */
+  menuItems: () =>
+    request<{ items: ManageableItem[]; popularIds: string[]; maxPopular: number }>(
+      '/admin/menu/items',
+    ),
+
+  createDeal: (input: {
+    name: string;
+    description?: string;
+    rupees: number;
+    isVeg: boolean;
+    /** Null runs the offer open-ended until it is removed by hand. */
+    durationHours: number | null;
+  }) => request<ManageableItem>('/admin/menu/deals', { method: 'POST', body: JSON.stringify(input) }),
+
+  removeMenuItem: (productId: string) =>
+    request<{ id: string; removed: boolean }>(`/admin/menu/items/${productId}`, {
+      method: 'DELETE',
+    }),
+
+  setPopular: (ids: string[]) =>
+    request<{ popularIds: string[] }>('/admin/menu/popular', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    }),
   createMenuItem: (input: {
     name: string;
     categoryId: string;

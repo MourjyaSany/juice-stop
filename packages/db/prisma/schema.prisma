@@ -209,6 +209,25 @@ model Product {
   /// Reaching 0 flips `inStock` false; the two are kept consistent in one service method so they
   /// cannot disagree.
   stockRemaining  Int?      @map("stock_remaining")
+
+  /// A time-limited offer rather than a standing menu item.
+  ///
+  /// Modelled as a Product on purpose. A deal has a name, a description and a price, which is
+  /// exactly what a product is — and making it one means ordering, server-side pricing, kitchen
+  /// tickets, stock and analytics all work with no special case anywhere. A parallel `Deal` table
+  /// would need its own pricing path, and a second pricing path is how a bill and a receipt end up
+  /// disagreeing.
+  isDeal          Boolean   @default(false) @map("is_deal")
+
+  /// The offer window. Null on both means "always on", which is every ordinary menu item.
+  ///
+  /// Enforced at the read boundary rather than by a sweep job: `GET /menu` filters on these, so an
+  /// expired deal stops being orderable the instant it lapses without anything having to remember
+  /// to look. There is still no worker process (audit A7), and a deal that ends only when a cron
+  /// notices is a deal that sells at yesterday's price.
+  availableFrom   DateTime? @map("available_from")
+  availableUntil  DateTime? @map("available_until")
+
   sortOrder       Int       @default(0) @map("sort_order")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -220,6 +239,8 @@ model Product {
   addOns   ProductAddOn[]
 
   @@index([outletId, categoryId, sortOrder])
+  /// Deals are queried by window on every menu read, and there are few of them among ~200 items.
+  @@index([isDeal, availableUntil])
   @@map("products")
 }
 

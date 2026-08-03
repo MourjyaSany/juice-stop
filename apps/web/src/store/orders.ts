@@ -87,8 +87,11 @@ export interface OrderAddressSnapshot {
  * a payee being configured. This list only supplies the copy.
  */
 export const PAYMENT_METHODS: Array<{ id: PaymentMethod; label: string; note: string }> = [
-  { id: 'UPI', label: 'UPI', note: 'Scan & pay · GPay, PhonePe, Paytm' },
-  { id: 'COD', label: 'Cash on delivery', note: 'Pay the rider when it arrives' },
+  { id: 'UPI', label: 'UPI', note: 'Scan & pay now · GPay, PhonePe, Paytm' },
+  // "Cash" said twice, deliberately. Riders carry no card machine and no UPI QR, so a customer who
+  // assumes they can scan at the door has nothing to pay with when it arrives — and that is a
+  // doorstep argument, not a support ticket. The word "only" does the work.
+  { id: 'COD', label: 'Cash on delivery', note: 'Cash only at the door — no UPI to the rider' },
 ];
 
 export interface OrderTotalsSnapshot {
