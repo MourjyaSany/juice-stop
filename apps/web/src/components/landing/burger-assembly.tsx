@@ -72,13 +72,41 @@ const LAYERS: readonly AssemblyLayer[] = [
   { slug: 'onion', alt: 'Red onion rings', w: 312, h: 143, top: 45.5, width: 36.9, z: 6, fromX: -36, fromY: -18, fromRotate: -20, enter: 0.36, settle: 0.56 },
   { slug: 'pickles', alt: 'Dill pickles', w: 311, h: 165, top: 41, width: 36.7, z: 7, fromX: 32, fromY: -20, fromRotate: 22, enter: 0.42, settle: 0.62 },
   { slug: 'sauce', alt: 'Burger sauce', w: 383, h: 171, top: 36.5, width: 45.2, z: 8, fromX: -34, fromY: 22, fromRotate: -18, enter: 0.48, settle: 0.68 },
-  { slug: 'top-bun', alt: 'Sesame brioche top bun', w: 474, h: 243, top: 24, width: 56, z: 9, fromX: 0, fromY: -46, fromRotate: 8, enter: 0.56, settle: 0.8 },
+  { slug: 'top-bun', alt: 'Sesame brioche top bun', w: 474, h: 243, top: 24, width: 56, z: 9, fromX: 0, fromY: -46, fromRotate: 8, enter: 0.56, settle: 0.78 },
   // Particles ride over the finished build rather than joining the stack. Both sit inboard of the
   // edges they drift toward — the stage clips overflow, and a crumb sliced by the rounded corner
   // reads as a rendering bug rather than as a crumb.
-  { slug: 'sesame', alt: '', w: 292, h: 140, top: 15, width: 42, z: 10, fromX: 0, fromY: -30, fromRotate: 0, enter: 0.72, settle: 0.9 },
-  { slug: 'crumbs', alt: '', w: 414, h: 222, top: 80, width: 52, z: 11, fromX: 0, fromY: 24, fromRotate: 0, enter: 0.78, settle: 1.0 },
+  //
+  // They now land before the compaction window opens, so nothing is still flying while the stack
+  // is squeezing shut.
+  { slug: 'sesame', alt: '', w: 292, h: 140, top: 15, width: 42, z: 10, fromX: 0, fromY: -30, fromRotate: 0, enter: 0.68, settle: 0.84 },
+  { slug: 'crumbs', alt: '', w: 414, h: 222, top: 80, width: 52, z: 11, fromX: 0, fromY: 24, fromRotate: 0, enter: 0.72, settle: 0.86 },
 ];
+
+/**
+ * How much the finished stack squeezes together.
+ *
+ * The layers are positioned where they were *photographed*, which leaves visible air between them
+ * — assembled, but loose, like an exploded diagram that stopped halfway. Real burgers compress
+ * under their own top bun.
+ *
+ * So the resting geometry stays exactly as tuned, and a final pass pulls every layer toward the
+ * stack's centre by this fraction of its distance from it. 0.26 closes most of the gap while
+ * leaving enough separation to still read as distinct ingredients — past about 0.35 the tomato
+ * disappears behind the cheese and it becomes a bun with a colour in the middle.
+ *
+ * Applied as a `translateY` on each layer rather than by editing `top`, because `top` is a layout
+ * property: animating it would take the whole stack off the compositor, which is the one thing
+ * this component's geometry is arranged to avoid.
+ */
+const COMPACTION = 0.26;
+
+/** The vertical centre the stack collapses toward — midpoint of the bun-to-bun span. */
+const STACK_CENTRE = 51.5;
+
+/** Scroll window over which the squeeze happens: after the last ingredient lands, before the end. */
+const COMPACT_FROM = 0.86;
+const COMPACT_TO = 0.98;
 
 export function BurgerAssembly({
   className = '',
@@ -94,7 +122,7 @@ export function BurgerAssembly({
 
   const { scrollYProgress } = useScroll({
     target: stageRef,
-    offset: ['start 85%', 'end 10%'],
+    offset: ['start 85%', 'end 25%'],
   });
 
   // Springing the *driver* rather than each layer means one spring simulation feeds twelve
@@ -124,6 +152,9 @@ export function BurgerAssembly({
           priority={priority}
         />
       ))}
+
+      {/* Fires as the stack squeezes shut — the payoff for having scrolled. */}
+      <Sparkles progress={progress} reduced={reduced === true} />
 
       {/* Same light treatment as every other image slot, so the hero belongs to the same system. */}
       <span
@@ -155,13 +186,43 @@ function Layer({
 
   const range: [number, number] = [enter, settle];
   const x = useTransform(progress, range, [`${fromX}%`, '0%'], { clamp: true });
+
+  /**
+   * How far this layer travels during the squeeze, expressed in its **own** height.
+   *
+   * `translateY` percentages resolve against the element's height, not the stage's — so a single
+   * shared offset would move a thin slice of cheese much further than the top bun. The distance is
+   * computed in stage units and then converted through each layer's rendered height.
+   *
+   * Rendered height as a share of the stage is `width × 1.25 × (h / w)`: the 1.25 converts a
+   * horizontal percentage to a vertical one across the stage's 5/4 box.
+   */
+  const heightPct = width * 1.25 * (h / w);
+  const compactPct = ((STACK_CENTRE - top) * COMPACTION * 100) / heightPct;
+
   // The −50% that centres the layer on its `top` anchor is baked into this range rather than set
   // as a separate `translateY`. Motion aliases `y` to `translateY` — they are one transform slot,
   // so declaring both would silently drop whichever it resolved second, and the stack would sit
   // half a layer low.
-  const y = useTransform(progress, range, [`${fromY - 50}%`, '-50%'], { clamp: true });
+  //
+  // Four stops rather than two: fly in, rest where it was photographed, hold, then squeeze. The
+  // hold matters — without it a layer that lands early would start creeping toward the centre
+  // while its neighbours were still in the air.
+  const y = useTransform(
+    progress,
+    [enter, settle, COMPACT_FROM, COMPACT_TO],
+    [`${fromY - 50}%`, '-50%', '-50%', `${-50 + compactPct}%`],
+    { clamp: true },
+  );
   const rotate = useTransform(progress, range, [fromRotate, 0], { clamp: true });
-  const scale = useTransform(progress, range, [0.86, 1], { clamp: true });
+  // Squashes very slightly as it settles, the way a stack under a bun does. Subtle on purpose:
+  // enough to feel weight, not enough to read as a distortion of the photography.
+  const scale = useTransform(
+    progress,
+    [enter, settle, COMPACT_FROM, COMPACT_TO],
+    [0.86, 1, 1, 1.015],
+    { clamp: true },
+  );
   // Fades in over the first third of its own window — an ingredient should be visible while it
   // travels, not pop into existence on arrival.
   const opacity = useTransform(progress, [enter, enter + (settle - enter) * 0.35], [0, 1], {
@@ -205,6 +266,98 @@ function Layer({
           // A contact shadow per layer is what makes a stack of cut-outs read as one object under
           // one light rather than as pasted stickers.
           filter: 'drop-shadow(0 10px 14px rgb(0 0 0 / 0.55))',
+        }}
+      />
+    </m.span>
+  );
+}
+
+/**
+ * The finishing sparkle.
+ *
+ * Fires as the stack squeezes shut, which is the moment the build is *done* — the payoff for
+ * having scrolled. Without it the assembly simply stops, and an animation that stops is one the
+ * viewer is left wondering whether they broke.
+ *
+ * Positions are a fixed table rather than randomised: a seed that changes per render would make
+ * the same scroll look different on every visit, and the whole point is that this reads as one
+ * choreographed moment. They ring the top bun and the seam where the fillings meet, because that
+ * is where a glint belongs on something glazed.
+ *
+ * Purely decorative and `aria-hidden` — nothing here is information, and a screen reader
+ * announcing eleven sparkles would be actively hostile.
+ */
+const SPARKS: ReadonlyArray<{ x: number; y: number; size: number; delay: number }> = [
+  { x: 26, y: 30, size: 13, delay: 0.0 },
+  { x: 72, y: 26, size: 16, delay: 0.06 },
+  { x: 50, y: 17, size: 19, delay: 0.02 },
+  { x: 36, y: 20, size: 10, delay: 0.12 },
+  { x: 64, y: 38, size: 11, delay: 0.09 },
+  { x: 20, y: 47, size: 12, delay: 0.15 },
+  { x: 80, y: 52, size: 14, delay: 0.05 },
+  { x: 44, y: 60, size: 9, delay: 0.18 },
+  { x: 58, y: 70, size: 12, delay: 0.11 },
+  { x: 30, y: 66, size: 10, delay: 0.2 },
+  { x: 50, y: 84, size: 15, delay: 0.14 },
+];
+
+function Sparkles({ progress, reduced }: { progress: MotionValue<number>; reduced: boolean }) {
+  // Under reduced motion the burger renders finished and still, so a burst of twinkling would be
+  // exactly the thing that preference exists to prevent.
+  if (reduced) return null;
+
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-0" style={{ zIndex: 12 }}>
+      {SPARKS.map((spark) => (
+        <Spark key={`${spark.x}-${spark.y}`} spark={spark} progress={progress} />
+      ))}
+    </span>
+  );
+}
+
+function Spark({
+  spark,
+  progress,
+}: {
+  spark: { x: number; y: number; size: number; delay: number };
+  progress: MotionValue<number>;
+}) {
+  // Each spark opens on its own slightly-delayed window, so they arrive as a scatter rather than
+  // as one synchronised flash. Fading back out before the end leaves the burger clean at rest —
+  // a permanent sparkle stops being a moment and becomes clutter.
+  const start = COMPACT_FROM + spark.delay * 0.4;
+  const peak = start + 0.05;
+  const end = Math.min(1, peak + 0.09);
+
+  const opacity = useTransform(progress, [start, peak, end], [0, 1, 0.35], { clamp: true });
+  const scale = useTransform(progress, [start, peak, end], [0.2, 1, 0.8], { clamp: true });
+  const rotate = useTransform(progress, [start, end], [-45, 45], { clamp: true });
+
+  return (
+    <m.span
+      className="absolute block"
+      style={{
+        left: `${spark.x}%`,
+        top: `${spark.y}%`,
+        width: spark.size,
+        height: spark.size,
+        marginLeft: -spark.size / 2,
+        marginTop: -spark.size / 2,
+        opacity,
+        scale,
+        rotate,
+      }}
+    >
+      {/* A four-point star drawn in CSS rather than an asset: it is two crossed radial gradients,
+          it scales to any size without a second file, and it costs no request. */}
+      <span
+        className="block h-full w-full"
+        style={{
+          background:
+            'radial-gradient(closest-side, rgb(255 255 255 / 0.95), transparent 70%), ' +
+            'linear-gradient(0deg, transparent 46%, rgb(255 214 170 / 0.95) 50%, transparent 54%), ' +
+            'linear-gradient(90deg, transparent 46%, rgb(255 214 170 / 0.95) 50%, transparent 54%)',
+          filter: 'drop-shadow(0 0 6px rgb(255 176 92 / 0.9))',
         }}
       />
     </m.span>

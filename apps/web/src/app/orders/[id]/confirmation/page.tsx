@@ -11,6 +11,8 @@ import { ArrowRightIcon, CheckIcon, ClockIcon, MapPinIcon } from '@/components/i
 import { AuroraField, GlassPanel, ParticleField, TactileButton } from '@/components/system';
 import { Skeleton, useHydrated } from '@/components/ui';
 import { SPRING } from '@/components/motion-provider';
+import { playConfirmChime } from '@/lib/confirm-chime';
+import { tapFeedback } from '@/lib/haptics';
 
 /**
  * The success moment.
@@ -33,6 +35,30 @@ export default function ConfirmationPage() {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, []);
+
+  /**
+   * Sound and buzz the moment an order becomes real — once, ever, per order.
+   *
+   * Keyed in sessionStorage rather than component state because this screen remounts: a back
+   * navigation from tracking, a refresh to re-read the pickup code, a UPI order arriving here
+   * after payment confirmation. Each of those would otherwise replay the chime for an event that
+   * happened once, and a confirmation sound that fires twice stops meaning "confirmed".
+   *
+   * Both are enhancements. The screen already says so in large type; this is the moment landing in
+   * a second sense for anyone whose phone can do it.
+   */
+  useEffect(() => {
+    if (order === undefined) return;
+    const key = `js.confirmed.${order.id}`;
+    try {
+      if (window.sessionStorage.getItem(key) === '1') return;
+      window.sessionStorage.setItem(key, '1');
+    } catch {
+      // Private mode with storage disabled. Playing once per mount is a better failure than never.
+    }
+    playConfirmChime();
+    tapFeedback('commit');
+  }, [order]);
 
   if (!hydrated) {
     return (
