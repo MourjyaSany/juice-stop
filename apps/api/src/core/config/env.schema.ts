@@ -65,9 +65,30 @@ export const envSchema = z
     OTP_DEV_BYPASS_CODE: z.string().optional(),
 
     // ── Payments ───────────────────────────────────────────────────────────────────────────────
-    RAZORPAY_KEY_ID: z.string(),
-    RAZORPAY_KEY_SECRET: z.string(),
-    RAZORPAY_WEBHOOK_SECRET: z.string(),
+    /**
+     * Who confirms that money arrived.
+     *
+     * `direct-upi` generates the QR ourselves and a staff member confirms receipt — no account, no
+     * fees, and no cryptographic proof. `razorpay` hands both the QR and the confirmation to a
+     * gateway webhook. The order path is identical either way; only the adapter differs.
+     */
+    PAYMENT_PROVIDER: z.enum(['direct-upi', 'razorpay']).default('direct-upi'),
+
+    /**
+     * The shop's UPI ID — where customers' money actually goes.
+     *
+     * Optional, and deliberately without a default. A placeholder here would generate QR codes
+     * that send real money to an address the shop does not own, which is the worst possible
+     * failure in this file. Absent simply means UPI is not offered and checkout shows cash only.
+     */
+    UPI_PAYEE_VPA: z.string().optional(),
+    UPI_PAYEE_NAME: z.string().default('Juice Stop'),
+
+    // Optional: no gateway is connected yet. Requiring them forced every developer to invent
+    // credentials for a provider the app never called.
+    RAZORPAY_KEY_ID: z.string().optional(),
+    RAZORPAY_KEY_SECRET: z.string().optional(),
+    RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
     PAYMENT_ORDER_EXPIRY_MINUTES: z.coerce.number().int().positive().default(10),
 
     // ── Store ──────────────────────────────────────────────────────────────────────────────────
@@ -118,12 +139,45 @@ export const envSchema = z
    * A test order against a live key is real money leaving a real account.
    */
   .refine(
-    (env) => env.NODE_ENV === 'production' || !env.RAZORPAY_KEY_ID.startsWith('rzp_live_'),
+    (env) => env.NODE_ENV === 'production' || env.RAZORPAY_KEY_ID?.startsWith('rzp_live_') !== true,
     {
       message:
         'A live Razorpay key (rzp_live_*) is present outside production. Refusing to start — ' +
         'this would take real money in a non-production environment.',
       path: ['RAZORPAY_KEY_ID'],
+    },
+  )
+  /**
+   * Guard: a shop that means to take UPI must say where the money goes.
+   *
+   * Enforced only in production, because a developer running the storefront locally has no VPA and
+   * should not need to invent one — they get cash-only checkout, which is a truthful degradation.
+   * A live shop with UPI selected and no payee configured is a misconfiguration that must not boot.
+   */
+  .refine(
+    (env) =>
+      env.NODE_ENV !== 'production' ||
+      env.PAYMENT_PROVIDER !== 'direct-upi' ||
+      (env.UPI_PAYEE_VPA !== undefined && env.UPI_PAYEE_VPA.includes('@')),
+    {
+      message:
+        'PAYMENT_PROVIDER is direct-upi but UPI_PAYEE_VPA is missing or malformed. Set the shop ' +
+        "UPI ID (e.g. juicestop@okhdfcbank) or customers cannot pay by UPI.",
+      path: ['UPI_PAYEE_VPA'],
+    },
+  )
+  /** Guard: selecting the Razorpay adapter without its credentials would fail on the first order. */
+  .refine(
+    (env) =>
+      env.PAYMENT_PROVIDER !== 'razorpay' ||
+      (env.RAZORPAY_KEY_ID !== undefined &&
+        env.RAZORPAY_KEY_SECRET !== undefined &&
+        env.RAZORPAY_WEBHOOK_SECRET !== undefined),
+    {
+      message:
+        'PAYMENT_PROVIDER is razorpay but RAZORPAY_KEY_ID / KEY_SECRET / WEBHOOK_SECRET are not ' +
+        'all set. Without the webhook secret, payment confirmations cannot be verified.',
+      path: ['PAYMENT_PROVIDER'],
     },
   )
   /** Guard: the OTP dev bypass must never exist in production. */

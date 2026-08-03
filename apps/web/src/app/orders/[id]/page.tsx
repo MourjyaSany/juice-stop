@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Money } from '@juice-stop/core';
 import {
   ORDER_FLOW,
   STATUS_COPY,
   editWindow,
+  isAwaitingPayment,
   orderProgress,
+  owesCashOnDelivery,
   statusCopyFor,
   toPaise,
   useOrders,
@@ -26,6 +28,7 @@ import { AnimatePresence, m } from 'motion/react';
 
 export default function OrderTrackingPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const hydrated = useHydrated();
   const orders = useOrders((s) => s.orders);
   const confirmNow = useOrders((s) => s.confirmNow);
@@ -39,6 +42,14 @@ export default function OrderTrackingPage() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // An unpaid order has no timeline to track — the kitchen has not been told about it. Landing
+  // here from a bookmark or the orders list should go where the customer can actually act.
+  useEffect(() => {
+    if (order !== undefined && isAwaitingPayment(order)) {
+      router.replace(`/orders/${order.id}/pay`);
+    }
+  }, [order, router]);
 
 
   if (!hydrated) {
@@ -245,9 +256,18 @@ export default function OrderTrackingPage() {
                 totalPaise={toPaise(order.totalPaiseStr)}
                 animate={false}
               />
-              <p className="mt-2.5 text-right text-xs text-[var(--color-text-tertiary)]">
-                Paid by {order.paymentMethod}
-              </p>
+              {owesCashOnDelivery(order) ? (
+                <p
+                  className="mt-2.5 rounded-[10px] px-3 py-2 text-right text-xs font-semibold"
+                  style={{ background: 'rgb(234 179 8 / 0.12)', color: 'var(--color-warning)' }}
+                >
+                  Have {Money.format(toPaise(order.totalPaiseStr))} ready — you pay the rider
+                </p>
+              ) : (
+                <p className="mt-2.5 text-right text-xs text-[var(--color-text-tertiary)]">
+                  Paid by {order.paymentMethod}
+                </p>
+              )}
             </div>
           </Card>
         </section>

@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  KITCHEN_ACTIVE_STATUSES,
   ORDER_FLOW,
   ORDER_STATUSES,
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
   PHASE_ETA_SECONDS,
   TERMINAL_STATUSES,
   UNAMBIGUOUS_ALPHABET,
+  collectsCashOnDelivery,
   formatOrderNumber,
   formatPickupToken,
   isFlowStatus,
   isTerminalStatus,
   phaseAnchor,
   phaseUrgency,
+  requiresPrepayment,
 } from './order-lifecycle.js';
 
 describe('status vocabulary', () => {
@@ -38,6 +43,57 @@ describe('status vocabulary', () => {
     expect(isFlowStatus('READY')).toBe(true);
     expect(isFlowStatus('CANCELLED')).toBe(false);
     expect(isFlowStatus('')).toBe(false);
+  });
+
+  it('keeps AWAITING_PAYMENT out of the happy path', () => {
+    // An entrance, not a step. In ORDER_FLOW it would add a seventh node to every progress bar and
+    // shift every step index — including for COD orders, which never pass through it.
+    expect(ORDER_STATUSES).toContain('AWAITING_PAYMENT');
+    expect(ORDER_FLOW).not.toContain('AWAITING_PAYMENT' as never);
+    expect(isFlowStatus('AWAITING_PAYMENT')).toBe(false);
+  });
+
+  it('keeps unpaid orders off the kitchen queue', () => {
+    // The load-bearing assertion for prepaid orders: an unpaid ticket on the board is free food.
+    expect(KITCHEN_ACTIVE_STATUSES).not.toContain('AWAITING_PAYMENT');
+  });
+
+  it('does not treat awaiting payment as settled', () => {
+    // It is not terminal — payment or expiry still has to move it — so nothing may treat it as done.
+    expect(isTerminalStatus('AWAITING_PAYMENT')).toBe(false);
+  });
+});
+
+describe('payment', () => {
+  it('offers exactly the two methods the shop accepts', () => {
+    expect([...PAYMENT_METHODS]).toEqual(['UPI', 'COD']);
+  });
+
+  it('has dropped the methods that were never connected to a gateway', () => {
+    for (const gone of ['CARD', 'NETBANKING', 'WALLET']) {
+      expect(PAYMENT_METHODS).not.toContain(gone as never);
+    }
+  });
+
+  it('gates the kitchen on UPI but not on cash', () => {
+    expect(requiresPrepayment('UPI')).toBe(true);
+    expect(requiresPrepayment('COD')).toBe(false);
+  });
+
+  it('knows when the rider still has money to collect', () => {
+    expect(collectsCashOnDelivery('COD', 'PENDING')).toBe(true);
+    expect(collectsCashOnDelivery('COD', 'PAID')).toBe(false);
+    // A prepaid order must never prompt for cash, whatever its payment status says.
+    expect(collectsCashOnDelivery('UPI', 'PENDING')).toBe(false);
+    expect(collectsCashOnDelivery('UPI', 'PAID')).toBe(false);
+  });
+
+  it('distinguishes an abandoned payment from a failed one', () => {
+    // Both end the order; only one is worth following up with the customer about.
+    expect(PAYMENT_STATUSES).toContain('EXPIRED');
+    expect(PAYMENT_STATUSES).toContain('FAILED');
+    expect(PAYMENT_STATUSES).toContain('PENDING');
+    expect(PAYMENT_STATUSES).toContain('PAID');
   });
 });
 

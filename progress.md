@@ -31,6 +31,8 @@ Full reasoning lives in [`docs/`](./docs); the pre-phase audit is
 | Manual shop open/close override | ✅ | Bounded, audited, realtime. Closes the server-side ordering gap too |
 | Owner adds menu items | ✅ | Storefront merges API-added items over the build-time catalogue |
 | Modal / bottom-nav overlap | ✅ | All four sheets now withdraw the nav — was only two |
+| **Real payments — UPI + COD** | ✅ | Card/netbanking/wallet removed. UPI pays a real VPA via an amount-locked QR; unpaid orders never reach the kitchen and hold no stock. Cash settles at handover. **ADR-018** |
+| Payment confirmation | ⚠️ Manual | A UPI deep link has no callback. Staff confirm receipt from the board; the customer is told so in those words. Gateway adapter is the upgrade — port is built |
 | Smart inventory | 🔵 Next | — |
 | Kitchen rush mode | ⬜ | — |
 | Order timers | ✅ | Kitchen and customer now grade through one `phaseUrgency` in `core` |
@@ -60,7 +62,9 @@ Detail and evidence in the audit. Severity as assessed there.
 | A8 | ~~`Setting`~~ and ~~`AuditLog`~~ now used by the settings layer. `IdempotencyKey` still unused | 🟡 |
 | A9 | Superseded client-side status simulator still live for legacy local orders | 🟡 |
 | A10 | 2 focus-visible styles app-wide; no focus trapping; no skip link | 🟡 |
-| A11 | Payments simulated; menu prices are build-time constants | 🟢 |
+| ~~A11~~ | ~~Payments simulated~~ — closed. Money is real (**ADR-018**). Menu prices are still build-time constants | 🟢 |
+| A12 | **Refunds do not exist.** A confirmed UPI payment on a rejected or cancelled order is real money the shop owes back, with no process to return it. Was theoretical while payments were simulated; is not any more | 🔴 |
+| A13 | COD has no abuse guard — chosen deliberately (no identity yet). A fake name and number costs a real bag of food. The dashboard's *cash outstanding* is the detection surface | 🟡 |
 
 ## Staff accounts (development only)
 
@@ -91,4 +95,4 @@ the button and the endpoint.
 | Q2 | Loyalty economics — points per rupee, tiers, expiry, accrual on discounted orders |
 | Q3 | Promotion mechanics — percentage / flat / free item, stacking, order of application vs the ₹100 minimum |
 | Q4 | Group ordering — what happens when a participant never pays |
-| Q5 | Refunds — is there a real process today, or is the dashboard figure forward-looking? |
+| Q5 | **Refunds — now urgent (A12).** Money is real. When the kitchen rejects a paid UPI order, who returns it, how, and within what promise? |

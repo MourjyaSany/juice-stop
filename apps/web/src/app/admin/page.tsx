@@ -176,6 +176,46 @@ export default function AdminOverviewPage() {
             />
           </div>
 
+          {/* ── Where the money actually is ────────────────────────────────────────────────────
+              Revenue above counts sales. This counts cash, and with cash on delivery back the two
+              genuinely differ: food that has left the kitchen against money nobody has collected.
+              Without this row that gap is invisible rather than absent, which is exactly the
+              leakage COD was originally removed to avoid. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Metric
+              label="Prepaid (UPI)"
+              value={Money.format(toPaise(data.cash.prepaidPaise))}
+              hint="settled before cooking"
+              accent="#22C55E"
+            />
+            <Metric
+              label="Cash collected"
+              value={Money.format(toPaise(data.cash.collectedPaise))}
+              hint="handed to riders"
+              accent="#22C55E"
+            />
+            <Metric
+              label="Cash outstanding"
+              value={Money.format(toPaise(data.cash.outstandingPaise))}
+              hint={
+                data.cash.ordersOutstanding === 0
+                  ? 'nothing owed'
+                  : `${data.cash.ordersOutstanding} order${data.cash.ordersOutstanding === 1 ? '' : 's'} not yet collected`
+              }
+              accent={data.cash.ordersOutstanding === 0 ? '#94A3B8' : '#EAB308'}
+            />
+            <Metric
+              label="Unpaid checkouts"
+              value={String(data.awaitingPayment.count)}
+              hint={
+                data.awaitingPayment.count === 0
+                  ? 'everyone who started, paid'
+                  : `${Money.format(toPaise(data.awaitingPayment.valuePaise))} never paid for`
+              }
+              accent={data.awaitingPayment.count === 0 ? '#94A3B8' : '#EF4444'}
+            />
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-3">
             {/* ── Revenue over time ──────────────────────────────────────────────────────── */}
             <Panel title="Revenue by night" className="lg:col-span-2">
@@ -280,21 +320,12 @@ export default function AdminOverviewPage() {
                 }))}
                 palette={['#22C55E', '#EAB308', '#A855F7', '#FF6B1A']}
               />
-              {/* The margin story. UPI is zero-MDR by regulation; cards are not — so the mix is a
-                  cost line, not a curiosity. Marked estimated: these are typical gateway rates,
-                  not a contracted one. */}
+              {/* With card, net banking and wallet gone, processing genuinely costs nothing: UPI
+                  is zero-MDR by regulation and cash costs nothing to accept. The real cost of the
+                  mix is not a fee — it is the cash outstanding above. */}
               <p className="mt-3 border-t pt-3 text-[11px] leading-relaxed text-[var(--color-text-tertiary)]" style={{ borderColor: 'var(--color-border-subtle)' }}>
-                Estimated processing cost{' '}
-                <span className="tabular font-semibold text-[var(--color-warning)]">
-                  {Money.format(
-                    toPaise(
-                      data.paymentMix
-                        .reduce((sum, m) => sum + BigInt(m.estimatedFeePaise), 0n)
-                        .toString(),
-                    ),
-                  )}
-                </span>
-                {' · UPI is zero-MDR; cards are ~2%'}
+                No processing fees — UPI is zero-MDR by regulation and cash costs nothing to take.
+                The cost of leaning on cash is collection risk, not a percentage.
               </p>
             </Panel>
 

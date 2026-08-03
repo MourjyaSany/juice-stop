@@ -143,9 +143,40 @@ export function KitchenOrderCard({
           </Tag>
         )}
         <Tag tone={order.paymentStatus === 'PAID' ? 'success' : 'warn'}>
-          {order.paymentStatus === 'PAID' ? `✓ Paid · ${order.paymentMethod}` : order.paymentStatus}
+          {order.paymentStatus === 'PAID'
+            ? `✓ Paid · ${order.paymentMethod}`
+            : order.paymentMethod === 'COD'
+              ? '💵 Cash on delivery'
+              : order.paymentStatus}
         </Tag>
       </div>
+
+      {/* Cash still owed, stated in the size it deserves.
+          A rider who hands over a COD bag without collecting has lost the whole order value, and
+          the old green "✓ Paid" tag was the same size whether money had arrived or not. This is
+          the one number that must not be missed on the way out of the door. */}
+      {order.paymentMethod === 'COD' && order.paymentStatus !== 'PAID' && (
+        <div
+          className="mt-3 flex items-center justify-between gap-3 rounded-[11px] px-3.5 py-2.5"
+          style={{
+            background: 'rgb(234 179 8 / 0.14)',
+            boxShadow: 'inset 3px 0 0 0 var(--color-warning)',
+          }}
+        >
+          <span
+            className="text-[11px] font-bold uppercase tracking-[0.1em]"
+            style={{ color: 'var(--color-warning)' }}
+          >
+            Collect on delivery
+          </span>
+          <span
+            className="tabular font-display text-lg font-bold"
+            style={{ color: 'var(--color-warning)' }}
+          >
+            {Money.format(toPaise(order.totalPaise))}
+          </span>
+        </div>
+      )}
 
       <ul className="mt-3.5 space-y-2">
         {order.items.map((item, i) => (

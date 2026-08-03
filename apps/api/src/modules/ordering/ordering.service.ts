@@ -1,5 +1,6 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import type { Prisma } from '@juice-stop/db';
 import {
   Money,
   toBusinessDate,
@@ -7,6 +8,9 @@ import {
   UNAMBIGUOUS_ALPHABET,
   formatOrderNumber,
   formatPickupToken,
+  paymentReferenceFor,
+  requiresPrepayment,
+  PAYMENT_WINDOW_MS,
   type FulfilmentType,
   type Paise,
   type PaymentMethod,
@@ -15,6 +19,7 @@ import { PrismaService } from '../../core/database/prisma.service.js';
 import { RealtimeService } from '../../core/events/realtime.service.js';
 import { StoreService } from '../store/store.service.js';
 import { InventoryService } from '../kitchen/inventory.service.js';
+import { PaymentsService } from '../payments/payments.service.js';
 import {
   ConflictError,
   ErrorCode,
@@ -84,11 +89,14 @@ interface PricedLine {
 
 @Injectable()
 export class OrderingService {
+  private readonly logger = new Logger(OrderingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
     private readonly inventory: InventoryService,
     private readonly store: StoreService,
+    private readonly payments: PaymentsService,
   ) {}
 
   /**
@@ -220,15 +228,28 @@ export class OrderingService {
       throw new ValidationError('A delivery address is required for delivery orders.');
     }
 
-    const now = new Date();
-    const editableUntil = new Date(now.getTime() + EDIT_WINDOW_MS);
+    // Does money have to arrive before the kitchen sees this?
+    //
+    // UPI does; cash does not. This single question decides the status the order is born in, and
+    // everything else about the two paths follows from it.
+    const prepay = requiresPrepayment(input.paymentMethod);
 
-    // Cooking starts when the order stops being changeable, so the promise is honest rather than
-    // optimistic by exactly the length of the edit window. Takeaway skips travel entirely — the
-    // customer is the courier — which is the whole reason it arrives sooner.
-    const travelSeconds = takeaway ? 0 : 7 * 60;
-    const etaSeconds = Math.round((totals.prepSeconds + 120 + travelSeconds) * 1.2);
-    const promisedAt = new Date(editableUntil.getTime() + etaSeconds * 1000);
+    if (prepay && !this.payments.upiAvailable) {
+      // Checkout asks which methods are live before showing them, so reaching here means either a
+      // stale tab or a direct call. Refusing beats accepting an order nobody can pay for.
+      throw new UnprocessableError(
+        ErrorCode.VALIDATION_FAILED,
+        'UPI is not available right now. Please choose cash on delivery.',
+      );
+    }
+
+    const now = new Date();
+
+    // For a prepaid order these are **provisional**. The edit window and the promise only mean
+    // anything once the kitchen can act, and the kitchen cannot act until payment lands — so both
+    // are recomputed at confirmation. Writing them now keeps the columns non-null for every order
+    // and gives an abandoned checkout sensible values it will never use.
+    const { editableUntil, promisedAt } = schedule(now, totals.prepSeconds, takeaway);
 
     const otp = String(randomInt(1000, 10_000));
     // Server-minted: a client-generated collection code proves nothing at the counter, exactly
@@ -236,14 +257,20 @@ export class OrderingService {
     // noisy counter without "is that a zero or an O?".
     const pickupToken = takeaway ? mintPickupToken() : null;
 
+    const orderNumber = makeOrderNumber(now);
+    const paymentReference = paymentReferenceFor(orderNumber);
+    const paymentExpiresAt = prepay ? new Date(now.getTime() + PAYMENT_WINDOW_MS) : null;
+
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
           outletId: 'outlet-main',
-          orderNumber: makeOrderNumber(now),
+          orderNumber,
           businessDate: toBusinessDate(now),
           userId: input.userId ?? null,
-          status: 'PLACED',
+          // The payment gate. AWAITING_PAYMENT is outside KITCHEN_ACTIVE, so an unpaid order is
+          // not merely styled differently on the board — it is not on the board.
+          status: prepay ? 'AWAITING_PAYMENT' : 'PLACED',
           fulfilmentType: input.fulfilmentType,
           addressJson: takeaway ? null : JSON.stringify(input.address),
           pickupToken,
@@ -253,8 +280,12 @@ export class OrderingService {
           taxPaise: totals.taxPaise,
           totalPaise: totals.totalPaise,
           paymentMethod: input.paymentMethod,
-          // With cash removed, every order is settled before the kitchen sees it.
-          paymentStatus: 'PAID',
+          // No longer hardcoded PAID. Nothing has been paid yet: UPI settles in a moment, cash
+          // settles at the doorstep, and claiming otherwise was the fiction this change removes.
+          paymentStatus: 'PENDING',
+          ...(prepay
+            ? { paymentReference, paymentRequestedAt: now, paymentExpiresAt }
+            : {}),
           placedAt: now,
           editableUntil,
           promisedAt,
@@ -279,7 +310,12 @@ export class OrderingService {
               note: p.note,
             })),
           },
-          events: { create: { toStatus: 'PLACED', actorRole: 'CUSTOMER' } },
+          events: {
+            create: {
+              toStatus: prepay ? 'AWAITING_PAYMENT' : 'PLACED',
+              actorRole: 'CUSTOMER',
+            },
+          },
         },
         include: { items: true },
       });
@@ -290,7 +326,7 @@ export class OrderingService {
         data: {
           aggregateType: 'order',
           aggregateId: created.id,
-          eventType: 'order.placed',
+          eventType: prepay ? 'order.awaiting_payment' : 'order.placed',
           payload: JSON.stringify({ orderId: created.id, orderNumber: created.orderNumber }),
         },
       });
@@ -298,23 +334,100 @@ export class OrderingService {
       return created;
     });
 
+    const serialised = serialiseOrder(order);
+
+    if (prepay) {
+      // A distinct event from `order.placed`, and the distinction matters at the counter: the new
+      // -order chime is driven by tickets arriving on the queue, and an unpaid order is not on the
+      // queue. An abandoned checkout must not ring a bell in a busy kitchen.
+      this.realtime.publish('order.awaiting_payment', order.id, { order: serialised });
+
+      // Stock is deliberately NOT consumed yet. Counted items are scarce by definition, and
+      // holding them for someone who opened a QR and wandered off is how the last five portions
+      // become unsellable. It is consumed at confirmation instead, with the rest of the order.
+      const payment = await this.payments.createRequest({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        amountPaise: Money.paise(order.totalPaise),
+        ...(order.paymentExpiresAt !== null ? { expiresAt: order.paymentExpiresAt } : {}),
+      });
+
+      if (payment.providerRef !== null) {
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { paymentProviderRef: payment.providerRef },
+        });
+      }
+
+      // The OTP and pickup token still travel now, even though this order may never be paid for.
+      //
+      // Only their hash is kept server-side and they are never re-served, so this response is the
+      // single opportunity to hand them over — withholding them here would mean a customer who
+      // pays has no delivery code at all. The storefront simply does not *display* them until the
+      // order is real, which costs nothing: an unused 4-digit code for an abandoned order is inert.
+      return { order: serialised, otp, pickupToken, payment };
+    }
+
     // Both of these run *after* the commit, deliberately. An outbox row inside the transaction is
     // what guarantees the event is not lost (ADR-006); this is the fast path that makes the
     // kitchen light up immediately, and it must never be able to roll the order back.
-    const serialised = serialiseOrder(order);
     this.realtime.publish('order.placed', order.id, { order: serialised });
     await this.inventory.consume(
       priced.map((p) => ({ productId: p.productId, quantity: p.quantity })),
     );
 
     // OTP and pickup token are returned once, here, and never stored in plaintext or re-served.
-    return { order: serialised, otp, pickupToken };
+    return { order: serialised, otp, pickupToken, payment: null };
+  }
+
+  /**
+   * Re-serve the payment request for an order still waiting to be paid.
+   *
+   * The payment screen refetches on mount, so this has to survive a refresh, a locked phone and a
+   * customer coming back from their banking app. It rebuilds the same request against the order's
+   * **stored** deadline rather than opening a new window, so reloading cannot extend the hold.
+   */
+  async paymentRequestFor(orderId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (order === null) throw new NotFoundError('Order not found.');
+
+    if (order.status !== 'AWAITING_PAYMENT') {
+      throw new ConflictError(
+        ErrorCode.ORDER_TRANSITION_INVALID,
+        order.paymentStatus === 'PAID'
+          ? 'This order is already paid for.'
+          : 'This order is no longer awaiting payment.',
+        { meta: { status: order.status, paymentStatus: order.paymentStatus } },
+      );
+    }
+
+    const payment = await this.payments.createRequest({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      amountPaise: Money.paise(order.totalPaise),
+      ...(order.paymentExpiresAt !== null ? { expiresAt: order.paymentExpiresAt } : {}),
+    });
+
+    return { order: serialiseOrder(order), payment };
   }
 
   /** Apply an edit inside the grace window. */
   async editOrder(orderId: string, lines: OrderLineInput[]) {
     const existing = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (existing === null) throw new NotFoundError('Order not found.');
+
+    // An unpaid order cannot be edited, because a QR is already showing a fixed amount.
+    //
+    // Re-pricing underneath it would leave the customer looking at a code for one total while the
+    // order says another — and whichever they paid, one of the two numbers would be wrong. The
+    // edit window has not started yet either: it begins when payment lands.
+    if (existing.status === 'AWAITING_PAYMENT') {
+      throw new ConflictError(
+        ErrorCode.ORDER_TRANSITION_INVALID,
+        'Finish paying first — the amount on your QR is fixed. You can change the order right after.',
+        { meta: { status: existing.status } },
+      );
+    }
 
     // Checked server-side, not just in the UI — a tab left open past the deadline would
     // otherwise still be able to change an order the kitchen has already started.
@@ -339,7 +452,14 @@ export class OrderingService {
       );
     }
 
-    const etaSeconds = Math.round((totals.prepSeconds + 120 + 7 * 60) * 1.2);
+    // Re-quoted from the existing edit deadline, using the same schedule placement does. This
+    // previously hardcoded delivery travel, so editing a *takeaway* order silently added seven
+    // minutes of a journey nobody was making.
+    const { promisedAt } = schedule(
+      new Date(existing.editableUntil.getTime() - EDIT_WINDOW_MS),
+      totals.prepSeconds,
+      existing.fulfilmentType === 'TAKEAWAY',
+    );
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.orderItem.deleteMany({ where: { orderId } });
@@ -351,7 +471,7 @@ export class OrderingService {
           totalPaise: totals.totalPaise,
           prepSeconds: totals.prepSeconds,
           // Re-quoted: adding a pizza to a Maggi order genuinely changes when it can arrive.
-          promisedAt: new Date(existing.editableUntil.getTime() + etaSeconds * 1000),
+          promisedAt,
           editCount: { increment: 1 },
           version: { increment: 1 },
           items: {
@@ -389,6 +509,130 @@ export class OrderingService {
     const order = await this.prisma.order.findUnique({ where: { id }, include: { items: true } });
     if (order === null) throw new NotFoundError('Order not found.');
     return serialiseOrder(order);
+  }
+
+  /**
+   * Money arrived. Release the order to the kitchen.
+   *
+   * The one place an order crosses from "someone said they would pay" to "the shop is cooking",
+   * and it is deliberately the only writer of `paymentStatus = PAID` for prepaid orders. The
+   * payment columns and the status change commit together via `alongside`, because an order that
+   * is paid but still invisible to the kitchen — or on the board but recorded unpaid — is the kind
+   * of split-brain that surfaces at 01:00 as a customer holding a receipt nobody can match.
+   *
+   * `confirmedBy` is not decoration. On the direct-UPI path this is a human assertion that money
+   * landed, so the audit trail has to name who asserted it. "Who released this order?" must always
+   * have an answer.
+   */
+  async confirmPayment(
+    orderId: string,
+    actor: ActorRole,
+    options: { confirmedBy: string; providerRef?: string | undefined },
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+    if (order === null) throw new NotFoundError('Order not found.');
+
+    // Idempotent. A double-tapped confirm button, or a provider retrying a webhook, must not throw
+    // — both are ordinary, and an error would invite someone to press it again harder.
+    if (order.paymentStatus === 'PAID' && order.status !== 'AWAITING_PAYMENT') {
+      return serialiseOrder(order);
+    }
+
+    if (order.status !== 'AWAITING_PAYMENT') {
+      throw new ConflictError(
+        ErrorCode.ORDER_TRANSITION_INVALID,
+        'This order is not waiting for payment.',
+        { meta: { status: order.status, paymentStatus: order.paymentStatus } },
+      );
+    }
+
+    const now = new Date();
+    const takeaway = order.fulfilmentType === 'TAKEAWAY';
+
+    // The clock starts now, not at checkout.
+    //
+    // A customer who took six minutes to find their phone must still get their full ten minutes to
+    // change the order, and the kitchen's promise has to be measured from the moment it can
+    // actually start. Anchoring either to placement would quietly hand back the time spent paying.
+    const { editableUntil, promisedAt } = schedule(now, order.prepSeconds, takeaway);
+
+    const updated = await this.transition(orderId, 'PLACED', actor, 'PAYMENT_CONFIRMED', {
+      paymentStatus: 'PAID',
+      paidAt: now,
+      paymentConfirmedBy: options.confirmedBy,
+      ...(options.providerRef !== undefined ? { paymentProviderRef: options.providerRef } : {}),
+      editableUntil,
+      promisedAt,
+      // Re-stamped so the customer's countdown and "placed at" agree with when the order became
+      // real to the kitchen, rather than when an unpaid draft was created.
+      placedAt: now,
+    });
+
+    // Now, and only now, does this order hold stock. Consuming at checkout would let an abandoned
+    // QR sit on the last five portions of something until the window lapsed.
+    await this.inventory.consume(
+      order.items
+        .filter((i): i is typeof i & { productId: string } => i.productId !== null)
+        .map((i) => ({ productId: i.productId, quantity: i.quantity })),
+    );
+
+    return updated;
+  }
+
+  /**
+   * Lapse unpaid orders whose window has closed.
+   *
+   * Evaluated on read rather than swept by a job, for the same reason the store override is
+   * (audit A7 — there is still no worker process): a deadline that only passes when something
+   * remembers to look is not a deadline. Called from the paths that would otherwise show or count
+   * a stale order.
+   *
+   * Failures are swallowed and logged. This runs as a side effect of ordinary reads, and a
+   * cancellation that could not be written must never take down the screen that triggered it.
+   */
+  async expireStalePayments(now = new Date()): Promise<number> {
+    const stale = await this.prisma.order.findMany({
+      where: { status: 'AWAITING_PAYMENT', paymentExpiresAt: { lt: now } },
+      select: { id: true },
+      take: 50,
+    });
+
+    let expired = 0;
+    for (const order of stale) {
+      try {
+        await this.transition(order.id, 'CANCELLED', 'SYSTEM', 'PAYMENT_WINDOW_EXPIRED', {
+          // EXPIRED rather than FAILED: nothing went wrong, nobody paid. The distinction is the
+          // difference between a customer worth following up and one who simply changed their mind.
+          paymentStatus: 'EXPIRED',
+        });
+        expired++;
+      } catch (error) {
+        this.logger.warn(`Could not expire unpaid order ${order.id}: ${String(error)}`);
+      }
+    }
+    return expired;
+  }
+
+  /**
+   * Orders waiting on money, for the counter to confirm.
+   *
+   * Separate from the queue on purpose. These are not tickets — nothing is cooked, nothing is
+   * timed, and mixing them into the four working columns would put uncooked, unpaid rows in front
+   * of a cook who is looking for work to do. Lapsed ones are swept first so the list only ever
+   * shows orders that can still be confirmed.
+   */
+  async awaitingPayment() {
+    await this.expireStalePayments();
+
+    const orders = await this.prisma.order.findMany({
+      where: { status: 'AWAITING_PAYMENT' },
+      orderBy: { placedAt: 'asc' },
+      include: { items: true },
+    });
+    return orders.map(serialiseOrder);
   }
 
   /** The kitchen queue — everything still needing work, oldest first. */
@@ -462,6 +706,15 @@ export class OrderingService {
     if (isTerminal(order.status)) {
       throw new ConflictError(ErrorCode.ORDER_TRANSITION_INVALID, 'This order is already closed.');
     }
+    // Nothing to close early: the edit window has not opened yet, and the kitchen is held by
+    // payment rather than by the countdown.
+    if (order.status === 'AWAITING_PAYMENT') {
+      throw new ConflictError(
+        ErrorCode.ORDER_TRANSITION_INVALID,
+        'This order has not been paid for yet.',
+        { meta: { status: order.status } },
+      );
+    }
 
     const now = new Date();
     // Idempotent: confirming twice, or after the window has lapsed on its own, is a no-op rather
@@ -506,7 +759,7 @@ export class OrderingService {
   async completeWithOtp(orderId: string, otp: string, actor: ActorRole) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { otpHash: true, status: true },
+      select: { otpHash: true, status: true, paymentMethod: true, paymentStatus: true },
     });
     if (order === null) throw new NotFoundError('Order not found.');
 
@@ -521,11 +774,41 @@ export class OrderingService {
       );
     }
 
-    return this.transition(orderId, 'DELIVERED', actor);
+    // Handover is when cash changes hands, so it is when a COD order becomes paid.
+    //
+    // This is the one moment the two facts genuinely coincide, and binding them means the shop can
+    // never record a delivered COD order that is still owed for. The rider proving possession and
+    // the money arriving are the same event; splitting them into two buttons would guarantee that
+    // one of them gets skipped on a busy night.
+    const collectsCash = order.paymentMethod === 'COD' && order.paymentStatus !== 'PAID';
+
+    return this.transition(
+      orderId,
+      'DELIVERED',
+      actor,
+      collectsCash ? 'CASH_COLLECTED' : undefined,
+      collectsCash
+        ? { paymentStatus: 'PAID', paidAt: new Date(), paymentConfirmedBy: `rider:${actor}` }
+        : undefined,
+    );
   }
 
-  /** Move an order through the lifecycle. The only path that writes `status`. */
-  async transition(orderId: string, to: OrderStatus, actor: ActorRole, reason?: string) {
+  /**
+   * Move an order through the lifecycle. The only path that writes `status`.
+   *
+   * `alongside` lets a caller commit related columns in the **same transaction** as the status
+   * change. It exists for exactly one class of problem: payment. Marking an order paid and moving
+   * it out of AWAITING_PAYMENT are one fact, and splitting them across two transactions leaves a
+   * window where an order is paid but invisible to the kitchen — or worse, cooking but unpaid.
+   * It is deliberately not a general-purpose escape hatch; `status` is still written only here.
+   */
+  async transition(
+    orderId: string,
+    to: OrderStatus,
+    actor: ActorRole,
+    reason?: string,
+    alongside?: Prisma.OrderUpdateInput,
+  ) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (order === null) throw new NotFoundError('Order not found.');
 
@@ -549,6 +832,7 @@ export class OrderingService {
       const next = await tx.order.update({
         where: { id: orderId },
         data: {
+          ...(alongside ?? {}),
           status: to,
           version: { increment: 1 },
           // The customer's countdown restarts from this instant on every phase change, so it is
@@ -597,6 +881,29 @@ export class OrderingService {
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 
 /**
+ * When an order stops being changeable, and when we promise it.
+ *
+ * Shared by placement and payment confirmation so the two can never quote differently — a prepaid
+ * order's clock starts when the money lands, and it must get exactly the same allowance as a cash
+ * order that started immediately.
+ *
+ * Cooking begins when the edit window shuts, so the promise is honest rather than optimistic by
+ * exactly the length of that window. Takeaway skips travel entirely — the customer is the courier
+ * — which is the whole reason pickup arrives sooner, and quoting the same number for both would
+ * make one of them a lie.
+ */
+function schedule(
+  from: Date,
+  prepSeconds: number,
+  takeaway: boolean,
+): { editableUntil: Date; promisedAt: Date } {
+  const editableUntil = new Date(from.getTime() + EDIT_WINDOW_MS);
+  const travelSeconds = takeaway ? 0 : 7 * 60;
+  const etaSeconds = Math.round((prepSeconds + 120 + travelSeconds) * 1.2);
+  return { editableUntil, promisedAt: new Date(editableUntil.getTime() + etaSeconds * 1000) };
+}
+
+/**
  * Six-character collection code, e.g. `JS-4KQ9`.
  *
  * The alphabet omits I, O, 0, 1, S and 5 — a code read aloud across a busy counter must not
@@ -626,6 +933,9 @@ function serialiseOrder(order: {
   totalPaise: bigint;
   paymentMethod: string;
   paymentStatus: string;
+  paymentReference?: string | null;
+  paymentExpiresAt?: Date | null;
+  paidAt?: Date | null;
   placedAt: Date;
   statusChangedAt: Date;
   editableUntil: Date;
@@ -665,6 +975,12 @@ function serialiseOrder(order: {
     totalPaise: order.totalPaise.toString(),
     paymentMethod: order.paymentMethod,
     paymentStatus: order.paymentStatus,
+    // The reference is safe to expose: it is derived from the order number the customer already
+    // holds, and it is what they quote if a payment needs chasing. The provider reference and
+    // whoever confirmed it stay server-side — those are for reconciliation, not for the customer.
+    paymentReference: order.paymentReference ?? null,
+    paymentExpiresAt: order.paymentExpiresAt?.toISOString() ?? null,
+    paidAt: order.paidAt?.toISOString() ?? null,
     placedAt: order.placedAt.toISOString(),
     statusChangedAt: order.statusChangedAt.toISOString(),
     editableUntil: order.editableUntil.toISOString(),

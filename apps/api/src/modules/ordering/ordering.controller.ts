@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
+import { PAYMENT_METHODS } from '@juice-stop/core';
 import { OrderingService, type OrderLineInput } from './ordering.service.js';
 import { ValidationError } from '../../core/errors/app-error.js';
 import { BLOCKS } from './blocks.js';
@@ -29,9 +30,10 @@ const PlaceOrderSchema = z
     lines: z.array(LineSchema).min(1).max(30),
     fulfilmentType: z.enum(['DELIVERY', 'TAKEAWAY']).default('DELIVERY'),
     address: AddressSchema.optional(),
-    // Cash on delivery is gone. Every method here settles before the kitchen sees the ticket,
-    // which removes the entire cash-reconciliation surface along with it.
-    paymentMethod: z.enum(['UPI', 'CARD', 'NETBANKING', 'WALLET']),
+    // Two methods, and the enum is the server's answer rather than the client's claim. Card, net
+    // banking and wallet are gone — none was ever connected to a gateway, so each was a string
+    // that meant nothing. UPI prepays; COD settles at the door.
+    paymentMethod: z.enum(PAYMENT_METHODS),
     customerNote: z.string().max(140).optional(),
     userId: z.string().optional(),
     // Takeaway has no address to borrow a name from, and a ticket with no name is a bag nobody
@@ -91,6 +93,18 @@ export class OrderingController {
   @Post(':id/confirm-now')
   async confirmNow(@Param('id') id: string) {
     return this.ordering.confirmNow(id);
+  }
+
+  /**
+   * The live payment request for an order still waiting to be paid.
+   *
+   * The payment screen calls this on mount, so it survives a refresh, a locked phone, and the trip
+   * out to a banking app and back. It re-serves the order's existing deadline rather than opening
+   * a fresh one — a window that renews on reload is not a window.
+   */
+  @Get(':id/payment')
+  async payment(@Param('id') id: string) {
+    return this.ordering.paymentRequestFor(id);
   }
 
   @Get()

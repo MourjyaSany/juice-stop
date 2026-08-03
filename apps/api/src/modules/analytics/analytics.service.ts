@@ -61,6 +61,28 @@ export interface OwnerOverview {
   }>;
   /** Why orders were refused. An empty list is good news and says so. */
   lostOrders: Array<{ reason: string; count: number }>;
+  /**
+   * Sales are not the same thing as money in hand, and with cash on delivery back they can differ
+   * by a lot on a bad night.
+   *
+   * `outstandingPaise` is the figure that matters operationally: food that has left, or is about
+   * to leave, against money nobody has collected yet. Without it the leakage that COD reintroduces
+   * is invisible rather than absent — which is precisely why COD was removed in the first place.
+   */
+  cash: {
+    prepaidPaise: string;
+    collectedPaise: string;
+    outstandingPaise: string;
+    ordersOutstanding: number;
+  };
+  /**
+   * Checkouts that opened a UPI request and never paid.
+   *
+   * Not revenue and never counted as such — it sits outside REVENUE_STATUSES entirely. Surfaced
+   * because a rising number here means the payment step is failing people, which no other figure
+   * on this dashboard would reveal.
+   */
+  awaitingPayment: { count: number; valuePaise: string };
   /** The same-length window immediately before this one, for a like-for-like read. */
   comparison: {
     previousWindow: DateWindow;
@@ -73,7 +95,17 @@ export interface OwnerOverview {
   generatedAt: string;
 }
 
-/** Statuses that represent money actually taken. */
+/**
+ * Statuses that represent a sale.
+ *
+ * AWAITING_PAYMENT is deliberately absent: an unpaid order is not a sale, it is an intention. If
+ * it were counted here, every abandoned checkout would inflate the night's revenue and the owner
+ * would be reconciling against a number that includes money nobody ever sent.
+ *
+ * Note the name is about *sales*, not cash received — a COD order counts here the moment the
+ * kitchen accepts it, while the cash arrives at the doorstep. The `cash` block below is what
+ * separates the two.
+ */
 const REVENUE_STATUSES = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'];
 
 @Injectable()
@@ -101,6 +133,7 @@ export class AnalyticsService {
           customerPhone: true,
           fulfilmentType: true,
           paymentMethod: true,
+          paymentStatus: true,
         },
       }),
       this.prisma.orderItem.findMany({
@@ -149,6 +182,8 @@ export class AnalyticsService {
       fulfilmentSplit: splitBy(earning, (o) => o.fulfilmentType),
       paymentMix: paymentMix(earning),
       lostOrders: await this.lostOrders(window),
+      cash: cashPosition(earning),
+      awaitingPayment: awaitingPayment(orders),
       comparison: await this.comparison(window, revenuePaise, earning.length),
       inventoryAlerts: products
         .sort((a, b) => Number(a.inStock) - Number(b.inStock))
@@ -515,10 +550,64 @@ function splitBy<T extends { totalPaise: bigint }>(rows: T[], key: (row: T) => s
 /**
  * Indicative processing cost per payment method, in basis points.
  *
- * UPI is zero-MDR by Indian regulation. Card and wallet figures are typical gateway pricing, not a
- * contracted rate — surfaced as *estimated* so nobody reconciles a settlement against them.
+ * Both are zero, and that is the point rather than an oversight. UPI carries zero MDR by Indian
+ * regulation, and cash costs nothing to accept — so with card, net banking and wallet gone, the
+ * shop's payment processing cost is genuinely nil. The map stays because the moment a gateway with
+ * a platform fee is introduced, or a method with a real MDR returns, this is the one place that
+ * has to change.
+ *
+ * Cash has a real cost, but it is not a percentage — it is leakage, and leakage is what the `cash`
+ * block measures. Modelling it as a fee here would be inventing a number.
  */
-const FEE_BPS: Record<string, number> = { UPI: 0, CARD: 200, NETBANKING: 150, WALLET: 180 };
+const FEE_BPS: Record<string, number> = { UPI: 0, COD: 0 };
+
+/**
+ * Money in hand, split from money merely earned.
+ *
+ * Prepaid is settled the moment the order exists. Cash is owed until a rider collects it, and the
+ * outstanding figure is the honest answer to "how much is walking around out there tonight?".
+ */
+function cashPosition(
+  orders: Array<{ paymentMethod: string; paymentStatus: string; totalPaise: bigint }>,
+): OwnerOverview['cash'] {
+  let prepaid = 0n;
+  let collected = 0n;
+  let outstanding = 0n;
+  let ordersOutstanding = 0;
+
+  for (const order of orders) {
+    if (order.paymentMethod === 'COD') {
+      if (order.paymentStatus === 'PAID') {
+        collected += order.totalPaise;
+      } else {
+        outstanding += order.totalPaise;
+        ordersOutstanding++;
+      }
+      continue;
+    }
+    // A prepaid order inside REVENUE_STATUSES has already been confirmed paid — that confirmation
+    // is what moved it out of AWAITING_PAYMENT in the first place.
+    prepaid += order.totalPaise;
+  }
+
+  return {
+    prepaidPaise: prepaid.toString(),
+    collectedPaise: collected.toString(),
+    outstandingPaise: outstanding.toString(),
+    ordersOutstanding,
+  };
+}
+
+/** Checkouts that opened a payment request and never completed it. */
+function awaitingPayment(
+  orders: Array<{ status: string; totalPaise: bigint }>,
+): OwnerOverview['awaitingPayment'] {
+  const waiting = orders.filter((o) => o.status === 'AWAITING_PAYMENT');
+  return {
+    count: waiting.length,
+    valuePaise: waiting.reduce((sum, o) => sum + o.totalPaise, 0n).toString(),
+  };
+}
 
 function paymentMix(orders: Array<{ paymentMethod: string; totalPaise: bigint }>) {
   return splitBy(orders, (o) => o.paymentMethod).map((row) => ({

@@ -94,6 +94,10 @@ export interface ApiOrder {
   totalPaise: string;
   paymentMethod: string;
   paymentStatus: string;
+  /** Quoted back to the shop if a payment needs chasing. Null for cash orders. */
+  paymentReference: string | null;
+  paymentExpiresAt: string | null;
+  paidAt: string | null;
   placedAt: string;
   /** When the kitchen last moved it. Drives the phase countdown on both dashboards. */
   statusChangedAt?: string;
@@ -104,6 +108,48 @@ export interface ApiOrder {
   customerNote: string | null;
   items: ApiOrderItem[];
 }
+
+/**
+ * A live UPI payment request.
+ *
+ * `confirmation` is the honest bit and drives the copy on the payment screen. AUTOMATIC means a
+ * provider webhook will confirm within seconds; MANUAL means the shop confirms by hand once they
+ * see the money — which on a busy counter is also seconds, but is a person and not a guarantee.
+ * Telling a customer "confirming automatically" when a cook has to notice is how a wait becomes a
+ * complaint.
+ */
+export interface PaymentRequestDto {
+  reference: string;
+  upiUri: string;
+  amountRupees: string;
+  amountPaise: string;
+  expiresAt: string;
+  confirmation: 'AUTOMATIC' | 'MANUAL';
+  providerRef: string | null;
+}
+
+export interface PaymentMethodOption {
+  id: 'UPI' | 'COD';
+  available: boolean;
+  unavailableReason?: string;
+  confirmation: 'AUTOMATIC' | 'MANUAL' | null;
+}
+
+export const storefrontApi = {
+  /**
+   * Which methods the shop can actually take tonight.
+   *
+   * Fetched rather than hardcoded, because UPI depends on a payee being configured. Hardcoding the
+   * list is how a customer chooses UPI at a shop with no UPI ID and finds out after tapping pay.
+   */
+  paymentMethods: () =>
+    api.get<{ methods: PaymentMethodOption[]; upiConfirmation: 'AUTOMATIC' | 'MANUAL' | null }>(
+      '/storefront/payment-methods',
+    ),
+
+  paymentFor: (orderId: string) =>
+    api.get<{ order: ApiOrder; payment: PaymentRequestDto }>(`/orders/${orderId}/payment`),
+};
 
 export const kitchenApi = {
   queue: () => api.get<{ orders: ApiOrder[]; serverTime: string }>('/kitchen/queue'),

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, m } from 'motion/react';
 import { getStoreStatus, Money, toBusinessDate } from '@juice-stop/core';
 import { priceCart, useCart } from '@/store/cart';
@@ -16,7 +16,14 @@ import {
 import { checkProfileReadiness, useProfile } from '@/store/profile';
 import { COMPLEX_NAME, blockLabel } from '@/data/blocks';
 import { estimateEtaSeconds, snapshotLines, snapshotTotals } from '@/lib/order-builder';
-import { ApiError, api, type ApiOrder } from '@/lib/api';
+import {
+  ApiError,
+  api,
+  storefrontApi,
+  type ApiOrder,
+  type PaymentMethodOption,
+  type PaymentRequestDto,
+} from '@/lib/api';
 import { useAcceptingOrders } from '@/components/storefront-live';
 import { FulfilmentToggle } from '@/components/checkout/fulfilment-toggle';
 import { CheckoutExtras } from '@/components/checkout/extras';
@@ -51,6 +58,35 @@ export default function CheckoutPage() {
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
+
+  /**
+   * Which methods the shop can take tonight, from the server.
+   *
+   * UPI depends on a payee being configured, so this cannot be a build-time constant. Until it
+   * loads both are assumed available — the alternative is a checkout that flickers its payment
+   * options on every visit, and the server rejects an unavailable method regardless.
+   */
+  const [methodOptions, setMethodOptions] = useState<PaymentMethodOption[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void storefrontApi
+      .paymentMethods()
+      .then((r) => {
+        if (cancelled) return;
+        setMethodOptions(r.methods);
+        // Never leave the customer sitting on a method the shop cannot take. Falling back to cash
+        // is always safe: it needs no configuration and cannot be unavailable.
+        if (r.methods.find((m) => m.id === 'UPI')?.available === false) setMethod('COD');
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const methodAvailable = (id: PaymentMethod): boolean =>
+    methodOptions?.find((m) => m.id === id)?.available ?? true;
 
   // Server-confirmed, so an owner who opened early unblocks checkout without anyone refreshing.
   // The API enforces this regardless — this only decides whether the button looks pressable.
@@ -120,9 +156,25 @@ export default function CheckoutPage() {
     // the database (never from the client), mints the order number, OTP and pickup token, and
     // puts the ticket on the kitchen board. The local record below is for *tracking* — it is not
     // the order.
-    let identity: { id: string; orderNumber: string; otp: string; pickupToken: string | null } | undefined;
+    let identity:
+      | {
+          id: string;
+          orderNumber: string;
+          otp: string;
+          pickupToken: string | null;
+          status: 'AWAITING_PAYMENT' | 'PLACED';
+          paymentStatus: 'PENDING';
+          paymentExpiresAt: number | null;
+        }
+      | undefined;
+    let payment: PaymentRequestDto | null = null;
     try {
-      const response = await api.post<{ order: ApiOrder; otp: string; pickupToken: string | null }>(
+      const response = await api.post<{
+        order: ApiOrder;
+        otp: string;
+        pickupToken: string | null;
+        payment: PaymentRequestDto | null;
+      }>(
         '/orders',
         {
           fulfilmentType: fulfilment,
@@ -156,7 +208,14 @@ export default function CheckoutPage() {
         orderNumber: response.order.orderNumber,
         otp: response.otp,
         pickupToken: response.pickupToken,
+        status: response.order.status === 'AWAITING_PAYMENT' ? 'AWAITING_PAYMENT' : 'PLACED',
+        paymentStatus: 'PENDING',
+        paymentExpiresAt:
+          response.order.paymentExpiresAt != null
+            ? new Date(response.order.paymentExpiresAt).getTime()
+            : null,
       };
+      payment = response.payment;
     } catch (cause) {
       // Stop here rather than falling back to a local-only order. A "placed" order the kitchen
       // never received is the worst possible outcome — the customer waits for food nobody is
@@ -173,7 +232,13 @@ export default function CheckoutPage() {
     const order = place(draft, identity);
 
     clearCart();
-    router.push(`/orders/${order.id}/confirmation`);
+
+    // A prepaid order is not confirmed yet — nothing has been paid and the kitchen has not been
+    // told. Sending the customer to a confirmation screen here would be the same lie the old
+    // hardcoded `paymentStatus: 'PAID'` told. Pay first; confirmation follows the money.
+    router.push(
+      payment !== null ? `/orders/${order.id}/pay` : `/orders/${order.id}/confirmation`,
+    );
   };
 
   if (!hydrated) {
@@ -423,41 +488,63 @@ export default function CheckoutPage() {
         {/* ── Pay ──────────────────────────────────────────────────────────────────────────── */}
         <section className="mt-7">
           <Eyebrow tone="violet">Pay with</Eyebrow>
-          <div className="mt-3 grid grid-cols-2 gap-2.5">
+          <div className="mt-3 grid gap-2.5">
             {PAYMENT_METHODS.map((m2) => {
-              const active = method === m2.id;
+              const available = methodAvailable(m2.id);
+              const active = method === m2.id && available;
+              const reason = methodOptions?.find((o) => o.id === m2.id)?.unavailableReason;
               return (
                 <button
                   key={m2.id}
                   type="button"
+                  disabled={!available}
                   onClick={() => setMethod(m2.id)}
                   aria-pressed={active}
-                  className="pressable relative rounded-[14px] px-3.5 py-3 text-left transition-colors duration-200"
+                  className="pressable relative rounded-[14px] px-3.5 py-3 text-left transition-colors duration-200 disabled:cursor-not-allowed"
                   style={{
                     background: active
                       ? 'linear-gradient(140deg, rgb(255 107 26 / 0.12), rgb(168 85 247 / 0.08))'
                       : 'var(--color-inset)',
                     border: `1px solid ${active ? 'rgb(255 107 26 / 0.4)' : 'var(--color-border-subtle)'}`,
+                    opacity: available ? 1 : 0.45,
                   }}
                 >
-                  <span className="flex items-center justify-between">
+                  <span className="flex items-center justify-between gap-2">
                     <span className="font-display text-sm font-bold">{m2.label}</span>
-                    {m2.id === 'UPI' && (
+                    {m2.id === 'UPI' && available && (
                       <span
                         className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
                         style={{ background: 'rgb(34 197 94 / 0.16)', color: 'var(--color-success)' }}
                       >
-                        FASTEST
+                        PAY NOW
+                      </span>
+                    )}
+                    {m2.id === 'COD' && available && (
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                        style={{ background: 'rgb(234 179 8 / 0.18)', color: 'var(--color-warning)' }}
+                      >
+                        PAY LATER
                       </span>
                     )}
                   </span>
                   <span className="mt-0.5 block text-[11px] text-[var(--color-text-secondary)]">
-                    {m2.note}
+                    {/* A disabled button with no explanation is a dead end. Say why. */}
+                    {available ? m2.note : (reason ?? 'Unavailable right now.')}
                   </span>
                 </button>
               );
             })}
           </div>
+
+          {/* What happens after the tap, stated before it.
+              The kitchen genuinely does not start a UPI order until the money lands, so promising
+              anything else here would be setting up the first broken status of the night. */}
+          <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--color-text-tertiary)]">
+            {method === 'UPI'
+              ? 'You’ll get a QR for the exact amount. The kitchen starts once the payment is confirmed.'
+              : `Keep ${Money.format(totals.totalPaise)} ready — the rider collects it at your door.`}
+          </p>
         </section>
 
         {/* ── Note ─────────────────────────────────────────────────────────────────────────── */}
@@ -503,7 +590,9 @@ export default function CheckoutPage() {
             ) : (
               <>
                 <CheckIcon size={18} strokeWidth={2.4} />
-                {takeaway ? 'Confirm pickup' : 'Place order'} ·{' '}
+                {/* The button says what the next screen does. "Place order" followed by a QR is a
+                    small surprise, and surprises on a payment screen cost trust. */}
+                {method === 'UPI' ? 'Pay' : takeaway ? 'Confirm pickup' : 'Place order'} ·{' '}
                 <AnimatedPaise value={totals.totalPaise} />
               </>
             )}

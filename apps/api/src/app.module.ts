@@ -14,6 +14,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module.js';
 import { StoreModule } from './modules/store/store.module.js';
 import { SettingsModule } from './core/settings/settings.module.js';
 import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js';
+import { PaymentsModule } from './modules/payments/payments.module.js';
 
 /**
  * Root module.
@@ -34,6 +35,7 @@ import { KitchenAuthModule } from './modules/kitchen-auth/kitchen-auth.module.js
     SettingsModule,
     CatalogModule,
     StoreModule,
+    PaymentsModule,
     KitchenAuthModule,
     KitchenModule,
     AnalyticsModule,

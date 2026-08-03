@@ -174,9 +174,16 @@ export default function ConfirmationPage() {
                     : COMPLEX_NAME
               }
             />
+            {/* Cash is not paid, and saying "Paid · COD" would be the same fiction the hardcoded
+                payment status used to tell. A customer who reads "Pay ₹359.10 at the door" has the
+                cash ready when the rider knocks, which is the entire point of telling them. */}
             <Row
               icon={<CheckIcon size={16} />}
-              label={`Paid · ${order.paymentMethod}`}
+              label={
+                order.paymentMethod === 'COD'
+                  ? 'Pay the rider at your door'
+                  : `Paid · ${order.paymentMethod}`
+              }
               value={Money.format(toPaise(order.totalPaiseStr))}
               emphasise
             />

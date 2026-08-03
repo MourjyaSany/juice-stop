@@ -1,11 +1,26 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { OrderingService } from './ordering.service.js';
 import { ValidationError } from '../../core/errors/app-error.js';
-import { KitchenAuthGuard } from '../kitchen-auth/kitchen-auth.guard.js';
+import {
+  KitchenAuthGuard,
+  type RequestWithKitchenSession,
+} from '../kitchen-auth/kitchen-auth.guard.js';
 
 const DeliveredSchema = z.object({
   otp: z.string().regex(/^\d{4}$/, 'The code is four digits.'),
+});
+
+/**
+ * The bank's own reference for the credit — a UTR for UPI.
+ *
+ * Optional on purpose. Demanding it would make the common case slow: a cook glancing at a
+ * notification that says "₹359.10 received" has the fact but not the twelve-digit reference, and
+ * a required field there would either stall the counter or get filled with rubbish. When it is
+ * supplied it is worth a great deal at reconciliation time, so there is a place for it.
+ */
+const ConfirmPaymentSchema = z.object({
+  providerRef: z.string().trim().min(4).max(64).optional(),
 });
 
 const RejectSchema = z.object({
@@ -33,6 +48,55 @@ export class KitchenController {
   async queue() {
     const orders = await this.ordering.kitchenQueue();
     return { orders, serverTime: new Date().toISOString() };
+  }
+
+  /**
+   * Orders waiting on money.
+   *
+   * Not tickets, and deliberately a separate endpoint from the queue: nothing here is cooked or
+   * timed, and folding them into the working columns would put unpaid rows in front of a cook
+   * looking for the next thing to make.
+   */
+  @Get('awaiting-payment')
+  async awaitingPayment() {
+    const orders = await this.ordering.awaitingPayment();
+    return { orders, serverTime: new Date().toISOString() };
+  }
+
+  /**
+   * Confirm that a UPI payment landed, and release the order to the kitchen.
+   *
+   * On the direct-UPI path this is a **human assertion**: someone has seen the money arrive in the
+   * shop's account and is saying so. The session's username is recorded against the order, because
+   * a manual confirmation with no name attached is exactly the sort of thing that becomes an
+   * argument at 03:00.
+   *
+   * Any signed-in staff member may confirm — the person watching the counter phone is usually the
+   * cook, and routing this through the owner account would make the fast path slow. The audit trail
+   * is what provides accountability here, not a role gate.
+   */
+  @Post('orders/:id/confirm-payment')
+  async confirmPayment(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() request: RequestWithKitchenSession,
+  ) {
+    const parsed = ConfirmPaymentSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new ValidationError('Check the payment reference.', {
+        fieldErrors: parsed.error.issues.map((i) => ({
+          field: i.path.join('.'),
+          code: i.code.toUpperCase(),
+          message: i.message,
+        })),
+      });
+    }
+
+    const session = request.kitchenSession;
+    return this.ordering.confirmPayment(id, session?.role === 'ADMIN' ? 'ADMIN' : 'KITCHEN', {
+      confirmedBy: session?.username ?? 'staff',
+      ...(parsed.data.providerRef !== undefined ? { providerRef: parsed.data.providerRef } : {}),
+    });
   }
 
   /**

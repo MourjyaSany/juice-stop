@@ -286,9 +286,31 @@ model Order {
   taxPaise         BigInt @default(0) @map("tax_paise")
   totalPaise       BigInt @map("total_paise")
 
-  /// UPI | CARD | COD
+  /// UPI | COD. Card, net banking and wallet are gone — none was ever connected to a gateway.
   paymentMethod String  @map("payment_method")
+  /// PENDING | PAID | EXPIRED | FAILED.
+  ///
+  /// No longer a constant. UPI settles before the kitchen sees the ticket; COD settles at the
+  /// doorstep. This column is what keeps those two honest, and what the "cash to collect" figure
+  /// on the owner dashboard is derived from.
   paymentStatus String  @default("PENDING") @map("payment_status")
+
+  /// Our own reference for the payment request — alphanumeric, carried in the UPI `tr` field.
+  /// Recognisable beside the order number on a bank statement, which is the whole job it has when
+  /// confirmation is a human reading their banking app.
+  paymentReference   String?   @map("payment_reference")
+  /// When the UPI request was minted, and when it lapses. Expiry is evaluated on read rather than
+  /// swept by a job — there is still no worker process (audit A7).
+  paymentRequestedAt DateTime? @map("payment_requested_at")
+  paymentExpiresAt   DateTime? @map("payment_expires_at")
+  /// When the money actually arrived. Null until it has.
+  paidAt             DateTime? @map("paid_at")
+  /// Who or what confirmed it — a staff username for manual confirmation, or a provider id once a
+  /// gateway webhook is the authority. Written so "who said this was paid?" is always answerable.
+  paymentConfirmedBy String?   @map("payment_confirmed_by")
+  /// The bank/provider's own reference — a UTR for UPI. Optional because a cook confirming from a
+  /// notification may not have it to hand, and demanding it would make the fast path slow.
+  paymentProviderRef String?   @map("payment_provider_ref")
 
   placedAt      DateTime @default(now()) @map("placed_at")
   /// When `status` last changed. Stored rather than derived from the event log because the
@@ -326,6 +348,9 @@ model Order {
   @@index([outletId, businessDate, status])
   @@index([userId, placedAt])
   @@index([status, placedAt])
+  /// Drives the lapse sweep: "which unpaid orders are past their window?" runs on every store
+  /// status read, so it must not become a table scan as the order table grows.
+  @@index([status, paymentExpiresAt])
   @@map("orders")
 }
 

@@ -14,6 +14,7 @@
  */
 
 export const ORDER_STATUSES = [
+  'AWAITING_PAYMENT',
   'PLACED',
   'ACCEPTED',
   'PREPARING',
@@ -31,6 +32,11 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
  *
  * Excludes CANCELLED and REJECTED on purpose: they are exits, not steps. Including them would make
  * every progress bar and step index in the app have to special-case them.
+ *
+ * AWAITING_PAYMENT is excluded for the mirror-image reason: it is an **entrance**. An unpaid order
+ * has not started its journey, and putting it in the flow would add a seventh step to every
+ * progress bar, shift every step index, and give COD orders a phase they never pass through.
+ * Payment is a gate in front of the lifecycle, not a stage of it.
  */
 export const ORDER_FLOW = [
   'PLACED',
@@ -66,13 +72,61 @@ export const FULFILMENT_TYPES = ['DELIVERY', 'TAKEAWAY'] as const;
 export type FulfilmentType = (typeof FULFILMENT_TYPES)[number];
 
 /**
- * Cash on delivery is deliberately absent.
+ * Two methods, and only two.
  *
- * Removing it removes the entire cash-reconciliation surface with it — per-rider drawers, variance
- * tracking, COD risk caps. Every method here settles before the kitchen sees the ticket.
+ * Card, net banking and wallet are gone. They were never real here — no gateway was ever connected,
+ * so every one of them was a button that set a string. More importantly, each is a settlement
+ * surface with its own fees, chargeback path and reconciliation story, and a one-kitchen shop does
+ * not need four of those. UPI is what this customer base actually pays with, and it carries zero
+ * MDR by Indian regulation, so the cheapest option is also the popular one.
+ *
+ * COD returns, deliberately and with its eyes open. It was removed to delete the cash-handling
+ * surface — per-rider drawers, variance tracking, risk caps — and that surface is genuinely back:
+ * a COD order is food that leaves the kitchen before any money exists. What keeps it honest here is
+ * that `paymentStatus` is no longer a constant. See PAYMENT_STATUSES below.
  */
-export const PAYMENT_METHODS = ['UPI', 'CARD', 'NETBANKING', 'WALLET'] as const;
+export const PAYMENT_METHODS = ['UPI', 'COD'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/**
+ * Where an order's money actually is.
+ *
+ * This used to be hardcoded `'PAID'` at placement, which was true of nothing — no gateway existed.
+ * Now it is the field that keeps the two methods honest, and the two travel in opposite directions:
+ *
+ *   UPI  · PENDING → PAID before the kitchen ever sees the ticket. Unpaid means uncooked.
+ *   COD  · PENDING all the way to the doorstep, → PAID when the rider collects.
+ *
+ * EXPIRED exists so an abandoned UPI checkout is distinguishable from one that failed. Both end the
+ * order, but only one of them is worth asking a customer about.
+ */
+export const PAYMENT_STATUSES = ['PENDING', 'PAID', 'EXPIRED', 'FAILED'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+/**
+ * Must this method settle before the kitchen is allowed to see the order?
+ *
+ * The single question that decides whether a new order starts at AWAITING_PAYMENT or PLACED. A
+ * predicate rather than an inline `=== 'UPI'` so adding a prepaid method later is one line here
+ * instead of a hunt through the ordering service.
+ */
+export const requiresPrepayment = (method: PaymentMethod): boolean => method === 'UPI';
+
+/** Is cash still owed on this order at handover? Drives the rider's "collect ₹350" prompt. */
+export const collectsCashOnDelivery = (
+  method: PaymentMethod,
+  paymentStatus: string,
+): boolean => method === 'COD' && paymentStatus !== 'PAID';
+
+/**
+ * How long a UPI payment request stays live.
+ *
+ * Ten minutes is not arbitrary: it matches the customer edit window, so the two timers a customer
+ * can be shown never disagree about what "a while" means. Long enough to find a phone and a
+ * network on hostel Wi-Fi; short enough that abandoned checkouts do not hold counted stock all
+ * night.
+ */
+export const PAYMENT_WINDOW_MS = 10 * 60 * 1000;
 
 /* ── Phase timing ───────────────────────────────────────────────────────────────────────────── */
 

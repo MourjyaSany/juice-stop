@@ -2,9 +2,19 @@
 
 import { useEffect } from 'react';
 import { api } from '@/lib/api';
-import { useOrders, type OrderStatus } from '@/store/orders';
+import { useOrders, type AnyOrderStatus, type PaymentStatus } from '@/store/orders';
 
 const POLL_MS = 5000;
+
+/**
+ * Faster while money is in flight.
+ *
+ * A status changes a handful of times across twenty minutes, so five seconds is generous for the
+ * cooking phases. Payment confirmation is different: the customer is staring at the screen having
+ * just paid, and every second of "waiting for confirmation" after the money left their account is
+ * a second they spend wondering whether it worked.
+ */
+const AWAITING_PAYMENT_POLL_MS = 2000;
 
 /** Nothing further happens to these, so there is nothing left to poll for. */
 const FINISHED = new Set<string>(['DELIVERED', 'CANCELLED', 'REJECTED']);
@@ -38,6 +48,11 @@ export function useOrderSync(): void {
     .map((o) => o.id)
     .join(',');
 
+  // A separate signal so the interval speeds up only while somebody is actually mid-payment, and
+  // drops back the moment it clears. Depending on the orders array itself would restart the timer
+  // on every unrelated write — including the ones this effect causes.
+  const anyAwaitingPayment = orders.some((o) => o.serverStatus === 'AWAITING_PAYMENT');
+
   useEffect(() => {
     if (activeIds.length === 0) return;
     const ids = activeIds.split(',');
@@ -51,9 +66,12 @@ export function useOrderSync(): void {
       await Promise.all(
         ids.map(async (id) => {
           try {
-            const order = await api.get<{ status: string; statusChangedAt?: string }>(
-              `/orders/${id}`,
-            );
+            const order = await api.get<{
+              status: string;
+              statusChangedAt?: string;
+              paymentStatus?: string;
+              paymentExpiresAt?: string | null;
+            }>(`/orders/${id}`);
             if (cancelled) return;
             // The kitchen's own timestamp, not ours. Polling adds up to five seconds of lag, and
             // the countdown restarts from this instant.
@@ -61,7 +79,20 @@ export function useOrderSync(): void {
               order.statusChangedAt !== undefined
                 ? new Date(order.statusChangedAt).getTime()
                 : undefined;
-            syncFromServer(id, order.status as OrderStatus, changedAt);
+            syncFromServer(
+              id,
+              order.status as AnyOrderStatus,
+              changedAt,
+              order.paymentStatus !== undefined
+                ? {
+                    status: order.paymentStatus as PaymentStatus,
+                    expiresAt:
+                      order.paymentExpiresAt != null
+                        ? new Date(order.paymentExpiresAt).getTime()
+                        : null,
+                  }
+                : undefined,
+            );
           } catch {
             // Offline, or the order is gone. The last known status stays on screen, which beats
             // blanking the thing the customer is watching.
@@ -71,8 +102,13 @@ export function useOrderSync(): void {
     };
 
     void poll();
-    const timer = setInterval(() => void poll(), POLL_MS);
-    // Coming back to the tab should show the truth immediately, not after the next tick.
+    const timer = setInterval(
+      () => void poll(),
+      anyAwaitingPayment ? AWAITING_PAYMENT_POLL_MS : POLL_MS,
+    );
+    // Coming back to the tab should show the truth immediately, not after the next tick. This also
+    // covers the most common payment journey: the customer leaves for their banking app and
+    // returns, and the confirmation should be waiting rather than up to two seconds away.
     const onVisible = () => void poll();
     document.addEventListener('visibilitychange', onVisible);
 
@@ -81,7 +117,7 @@ export function useOrderSync(): void {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [activeIds, syncFromServer]);
+  }, [activeIds, anyAwaitingPayment, syncFromServer]);
 }
 
 /** Renders nothing; exists so the root layout can mount the sync. */

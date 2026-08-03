@@ -17,6 +17,7 @@ const VALID = {
   RAZORPAY_KEY_ID: 'rzp_test_abc',
   RAZORPAY_KEY_SECRET: 'secret',
   RAZORPAY_WEBHOOK_SECRET: 'whsecret',
+  UPI_PAYEE_VPA: 'juicestop@okhdfcbank',
   STORE_CLOSE_TIME: '04:00',
   BUSINESS_DATE_OFFSET_HOURS: '5',
   CAPACITY_WARN_THRESHOLD: '0.80',
@@ -95,5 +96,25 @@ describe('production safety guards — each of these prevents a real incident', 
   it('enforces minimum secret lengths', () => {
     expect(() => env({ JWT_ACCESS_SECRET: 'tooshort' })).toThrow(/at least 32 characters/);
     expect(() => env({ CSRF_SECRET: 'tooshort' })).toThrow(/at least 32 characters/);
+  });
+
+  it('REFUSES a production shop that takes UPI without saying where the money goes', () => {
+    // A missing payee in production is a shop whose customers cannot pay. Locally it is fine —
+    // checkout degrades to cash only rather than demanding an invented UPI ID.
+    expect(() => prod({ UPI_PAYEE_VPA: undefined })).toThrow(/UPI_PAYEE_VPA/);
+    expect(() => env({ UPI_PAYEE_VPA: undefined })).not.toThrow();
+  });
+
+  it('REFUSES the Razorpay adapter without the secret that verifies its webhooks', () => {
+    // Selecting the gateway without a webhook secret means confirmations cannot be verified —
+    // which is the entire reason to use a gateway (ADR-005).
+    expect(() =>
+      env({ PAYMENT_PROVIDER: 'razorpay', RAZORPAY_WEBHOOK_SECRET: undefined }),
+    ).toThrow(/RAZORPAY_KEY_ID/);
+    expect(() => env({ PAYMENT_PROVIDER: 'razorpay' })).not.toThrow();
+  });
+
+  it('defaults to the no-account UPI path', () => {
+    expect(env().PAYMENT_PROVIDER).toBe('direct-upi');
   });
 });

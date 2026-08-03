@@ -27,6 +27,21 @@ interface Transition {
 }
 
 const TRANSITIONS: Transition[] = [
+  /* ── Payment gate ─────────────────────────────────────────────────────────────────────────
+     A prepaid order waits here until money actually arrives. The kitchen never sees it — the
+     queue selects on KITCHEN_ACTIVE, which excludes this status — because a ticket cooked before
+     payment is simply food given away.
+
+     SYSTEM is the actor when a provider webhook confirms, or when the window lapses. KITCHEN and
+     ADMIN can confirm by hand, which is the whole mechanism on the direct-UPI path: someone sees
+     the money land in the shop's account and says so. Every one of those writes an audit row
+     naming who said it, which is the only accountability a manual confirmation can have.
+
+     There is deliberately no way back from PLACED to AWAITING_PAYMENT. Money either arrived or it
+     did not; "un-confirming" a payment is a refund, and a refund is not a status change. */
+  { from: 'AWAITING_PAYMENT', to: 'PLACED', actors: ['SYSTEM', 'KITCHEN', 'ADMIN'] },
+  { from: 'AWAITING_PAYMENT', to: 'CANCELLED', actors: ['CUSTOMER', 'SYSTEM', 'ADMIN'] },
+
   { from: 'PLACED', to: 'ACCEPTED', actors: ['KITCHEN', 'ADMIN', 'SYSTEM'] },
   { from: 'PLACED', to: 'REJECTED', actors: ['KITCHEN', 'ADMIN'] },
   { from: 'PLACED', to: 'CANCELLED', actors: ['CUSTOMER', 'ADMIN'] },

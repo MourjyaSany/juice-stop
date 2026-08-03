@@ -9,12 +9,15 @@ import {
   PAYMENT_METHODS as PAYMENT_METHOD_IDS,
   formatOrderNumber,
   formatPickupToken,
+  isFlowStatus,
   phaseAnchor,
   phaseUrgency,
   type FulfilmentType,
   type OrderFlowStatus,
+  type OrderStatus as AnyOrderStatus,
   type Paise,
   type PaymentMethod,
+  type PaymentStatus,
 } from '@juice-stop/core';
 import { api } from '@/lib/api';
 import type { CartLine } from './cart';
@@ -39,7 +42,16 @@ import type { CartLine } from './cart';
 // an order status is. Re-exported because ~15 call sites import them from here.
 export type OrderStatus = OrderFlowStatus;
 export { ORDER_FLOW, PHASE_ETA_SECONDS };
-export type { FulfilmentType, PaymentMethod };
+export type { FulfilmentType, PaymentMethod, PaymentStatus };
+
+/**
+ * Every status the server can report, including the ones outside the happy path.
+ *
+ * Distinct from `OrderStatus` above, which is the six-step flow the timeline renders. The server
+ * can also say AWAITING_PAYMENT, CANCELLED or REJECTED, and pretending otherwise is what made
+ * `ORDER_FLOW.indexOf(status)` quietly return −1 and render a cancelled order as "Order secured".
+ */
+export type { AnyOrderStatus };
 
 /** How long the customer may change their mind after placing. */
 export const EDIT_WINDOW_MS = 10 * 60 * 1000;
@@ -64,13 +76,19 @@ export interface OrderAddressSnapshot {
   contactPhone: string;
 }
 
+/**
+ * The two ways to pay.
+ *
+ * UPI is first and default: it settles before the kitchen starts, so nothing is cooked on trust,
+ * and it carries zero MDR by Indian regulation. Cash is the fallback for anyone who would rather
+ * not pay up front — it costs the shop a real risk, which is why it is second and not the default.
+ *
+ * Availability is decided by the **server** (`/storefront/payment-methods`), because UPI depends on
+ * a payee being configured. This list only supplies the copy.
+ */
 export const PAYMENT_METHODS: Array<{ id: PaymentMethod; label: string; note: string }> = [
-  // UPI first and default: zero MDR by regulation in India versus ~2% on cards, which makes this
-  // one default worth more to the margin than most engineering in this repo.
-  { id: 'UPI', label: 'UPI', note: 'GPay · PhonePe · Paytm' },
-  { id: 'CARD', label: 'Card', note: 'Debit or credit' },
-  { id: 'NETBANKING', label: 'Net banking', note: 'All major banks' },
-  { id: 'WALLET', label: 'Wallet', note: 'Paytm · Amazon Pay' },
+  { id: 'UPI', label: 'UPI', note: 'Scan & pay · GPay, PhonePe, Paytm' },
+  { id: 'COD', label: 'Cash on delivery', note: 'Pay the rider when it arrives' },
 ];
 
 export interface OrderTotalsSnapshot {
@@ -108,13 +126,23 @@ export interface PlacedOrder extends OrderTotalsSnapshot {
   editableUntil: number;
   editCount: number;
   /**
+   * Where this order's money is, as the server last reported it.
+   *
+   * Drives two different screens: a PENDING UPI order belongs on the payment screen, while a
+   * PENDING cash order is perfectly normal and simply means the rider has money to collect.
+   */
+  paymentStatus?: PaymentStatus;
+  /** When the UPI request lapses. Null for cash — there is nothing to expire. */
+  paymentExpiresAt?: number | null;
+
+  /**
    * The status the **kitchen** last reported, and when we heard it.
    *
    * Present once an order has been synced from the API. Its absence is meaningful: an order
    * placed before the storefront talked to the server has no truth to show, and the simulated
    * timeline below is all it will ever have.
    */
-  serverStatus?: OrderStatus;
+  serverStatus?: AnyOrderStatus;
   /** When we heard it. Used only as a fallback if the server did not send its own stamp. */
   serverStatusAt?: number;
   /** When the kitchen actually made the change. Drives the countdown. */
@@ -135,10 +163,19 @@ interface OrdersState {
       orderNumber: string;
       otp: string;
       pickupToken: string | null;
+      /** What the server actually created — AWAITING_PAYMENT for UPI, PLACED for cash. */
+      status: AnyOrderStatus;
+      paymentStatus: PaymentStatus;
+      paymentExpiresAt: number | null;
     },
   ) => PlacedOrder;
-  /** Record the status the kitchen reported. The only writer of `serverStatus`. */
-  syncFromServer: (orderId: string, status: OrderStatus, statusChangedAt?: number) => void;
+  /** Record what the server reported. The only writer of `serverStatus`. */
+  syncFromServer: (
+    orderId: string,
+    status: AnyOrderStatus,
+    statusChangedAt?: number,
+    payment?: { status: PaymentStatus; expiresAt: number | null },
+  ) => void;
   /** Apply an edit made during the grace window. Rejected once the window has shut. */
   applyEdit: (
     orderId: string,
@@ -188,13 +225,23 @@ export const useOrders = create<OrdersState>()(
                 ? mintPickupToken()
                 : null,
           editCount: 0,
-          ...(serverIdentity !== undefined ? { serverStatus: 'PLACED' as const, serverStatusAt: Date.now() } : {}),
+          // The server's own status, not an assumption. A UPI order is born AWAITING_PAYMENT, and
+          // recording it as PLACED here would show the customer a cooking timeline for food the
+          // kitchen has not even been told about.
+          ...(serverIdentity !== undefined
+            ? {
+                serverStatus: serverIdentity.status,
+                serverStatusAt: Date.now(),
+                paymentStatus: serverIdentity.paymentStatus,
+                paymentExpiresAt: serverIdentity.paymentExpiresAt,
+              }
+            : {}),
         };
         set((s) => ({ orders: [placed, ...s.orders] }));
         return placed;
       },
 
-      syncFromServer: (orderId, status, statusChangedAt) => {
+      syncFromServer: (orderId, status, statusChangedAt, payment) => {
         set((s) => ({
           orders: s.orders.map((o) =>
             o.id === orderId
@@ -203,6 +250,16 @@ export const useOrders = create<OrdersState>()(
                   serverStatus: status,
                   serverStatusAt: Date.now(),
                   ...(statusChangedAt !== undefined ? { statusChangedAt } : {}),
+                  ...(payment !== undefined
+                    ? { paymentStatus: payment.status, paymentExpiresAt: payment.expiresAt }
+                    : {}),
+                  // Payment confirmation restarts the clock server-side — the edit window and the
+                  // promise both begin when the money lands, not when the QR appeared. Without
+                  // adopting the server's new anchors the customer would watch a countdown that
+                  // started while they were still in their banking app.
+                  ...(statusChangedAt !== undefined && status === 'PLACED' && o.serverStatus === 'AWAITING_PAYMENT'
+                    ? { placedAt: statusChangedAt, editableUntil: statusChangedAt + EDIT_WINDOW_MS }
+                    : {}),
                 }
               : o,
           ),
@@ -299,8 +356,24 @@ export function orderProgress(order: PlacedOrder, now = Date.now()): OrderProgre
   // promised time. It exists for orders placed before the storefront talked to the API, and it is
   // only ever a guess. Once a real status has been reported, showing anything else would mean
   // telling a customer their food is cooking while the cook has it sitting on the pass.
-  if (order.serverStatus !== undefined) {
+  //
+  // Guarded on `isFlowStatus` rather than mere presence: AWAITING_PAYMENT, CANCELLED and REJECTED
+  // are not steps, and feeding them to a step index returns −1, which previously rendered a
+  // cancelled order as "Order secured".
+  if (order.serverStatus !== undefined && isFlowStatus(order.serverStatus)) {
     return progressFromStatus(order, order.serverStatus, now);
+  }
+
+  // Nothing has started. An unpaid order has no timeline to show — the payment screen owns it.
+  if (order.serverStatus === 'AWAITING_PAYMENT') {
+    return {
+      status: 'PLACED',
+      stepIndex: 0,
+      stepProgress: 0,
+      secondsRemaining: 0,
+      isLate: false,
+      reachedAt: {},
+    };
   }
 
   if (window.open) {
@@ -373,6 +446,25 @@ export const statusCopyFor = (fulfilment: FulfilmentType) =>
 
 /** Parse a persisted paise string back into branded money. */
 export const toPaise = (s: string): Paise => Money.paise(BigInt(s));
+
+/* ── Payment state ──────────────────────────────────────────────────────────────────────────── */
+
+/** Still waiting for the customer to pay. The payment screen owns this order, not the tracker. */
+export const isAwaitingPayment = (order: PlacedOrder): boolean =>
+  order.serverStatus === 'AWAITING_PAYMENT';
+
+/**
+ * Does the customer still owe money at the door?
+ *
+ * True for a cash order right up until the rider collects. Used to show the amount on the tracking
+ * screen, so nobody is surprised at the door by a total they last saw at checkout.
+ */
+export const owesCashOnDelivery = (order: PlacedOrder): boolean =>
+  order.paymentMethod === 'COD' && order.paymentStatus !== 'PAID';
+
+/** The payment window lapsed before anyone paid — the order is gone. */
+export const paymentLapsed = (order: PlacedOrder): boolean =>
+  order.paymentStatus === 'EXPIRED' || order.paymentStatus === 'FAILED';
 
 /**
  * Timeline for an order whose status the kitchen has actually reported.

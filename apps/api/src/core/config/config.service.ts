@@ -75,6 +75,9 @@ export class AppConfigService {
 
   get payments() {
     return {
+      provider: this.env.PAYMENT_PROVIDER,
+      upiPayeeVpa: this.env.UPI_PAYEE_VPA,
+      upiPayeeName: this.env.UPI_PAYEE_NAME,
       razorpayKeyId: this.env.RAZORPAY_KEY_ID,
       razorpayKeySecret: this.env.RAZORPAY_KEY_SECRET,
       razorpayWebhookSecret: this.env.RAZORPAY_WEBHOOK_SECRET,

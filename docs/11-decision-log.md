@@ -473,6 +473,62 @@ orchestration and environment variables only.
 
 ---
 
+## ADR-018 · UPI paid up front + cash on delivery; confirmation behind a provider port
+
+**Status:** Accepted · 3 Aug 2026 · **Supersedes the method list in ADR-014, not its port**
+
+**Context.** Payments were simulated: `paymentStatus` was hardcoded `'PAID'` at placement and no
+gateway was ever connected, so `CARD`, `NETBANKING` and `WALLET` were strings that meant nothing.
+The requirement is real UPI — a QR for the exact amount, confirmed after payment — plus cash.
+
+The blocking constraint is not the QR. **A UPI deep link has no callback.** `upi://pay?…` is an
+instruction to the customer's app; money reaches the payee's bank account and nothing informs the
+server. Automatic confirmation therefore requires a PSP that owns the collecting VPA and calls back
+— which requires a merchant account, business KYC and a bank account.
+
+**Decision.** Two methods, `UPI` and `COD`. Confirmation sits behind a `PaymentProvider` port with
+two adapters:
+
+- **`direct-upi`** (default) — we build the QR against the shop's own VPA. Confirmation is
+  `MANUAL`: a staff member sees the credit in their banking app and presses *Payment received* on
+  the kitchen board. Free, no signup, and the mechanism a great many Indian counter businesses
+  already run on.
+- **`razorpay`** — gateway-owned QR, signature-verified webhook, `AUTOMATIC` confirmation. Port and
+  configuration exist; the adapter is not built (the factory throws rather than silently degrading).
+
+`confirmation` is part of the port's contract and travels to the checkout copy. A customer told
+"confirming automatically" who then waits for a cook to notice is a customer who disbelieves the
+next status too.
+
+Prepaid orders are born `AWAITING_PAYMENT`, which is deliberately **not** in `ORDER_FLOW` — it is an
+entrance, not a step, so no progress bar gains a seventh node and COD orders never traverse a phase
+they do not have. It is also outside `KITCHEN_ACTIVE`, so an unpaid order is not merely styled
+differently on the board: it is not on the board.
+
+**Rejected alternatives.**
+- *Parse bank SMS or notifications to auto-confirm.* Free and automatic, and it is guessing about
+  money. Formats change without warning, notification access is restricted on modern Android, and
+  a spoofed message is free food. Rejected as a source of payment truth; acceptable only as a hint
+  that pre-fills a human's confirmation, which is not worth an Android app today.
+- *Trust the customer's "I've paid".* Free food to anyone who taps it.
+- *Keep card/wallet as options.* Four settlement surfaces with four fee models and four
+  reconciliation stories, for a one-kitchen shop, none of them connected to anything.
+- *Consume stock at checkout for prepaid orders.* Lets an abandoned QR hold the last five portions
+  until the window lapses. Stock is consumed at confirmation instead.
+
+**Consequences.** COD reintroduces the cash-handling surface its removal deleted, so
+`paymentStatus` stops being a constant and the owner dashboard grows a cash block: prepaid,
+collected, and **outstanding** — food that has left against money nobody holds. Without that figure
+the leakage COD was originally removed to avoid would be invisible rather than absent. Cash settles
+at handover, bound to the existing OTP step, because possession and payment are one event and
+splitting them into two buttons guarantees one gets skipped on a busy night. Per ADR-004's spirit,
+the manual confirmation is audited: every release names who asserted the money arrived.
+
+**Open.** Q5 in `progress.md` (refunds) becomes materially more pressing — a confirmed UPI payment
+against a rejected order is now real money the shop owes back, with no process to return it.
+
+---
+
 ## Decisions deliberately deferred
 
 | Question | Deferred because | Revisit at |

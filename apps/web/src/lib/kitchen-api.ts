@@ -123,6 +123,13 @@ export interface OwnerOverview {
     estimatedFeePaise: string;
   }>;
   lostOrders: Array<{ reason: string; count: number }>;
+  cash: {
+    prepaidPaise: string;
+    collectedPaise: string;
+    outstandingPaise: string;
+    ordersOutstanding: number;
+  };
+  awaitingPayment: { count: number; valuePaise: string };
   comparison: {
     previousWindow: { from: string; to: string };
     revenuePaise: string;
@@ -169,7 +176,12 @@ export interface ActivityEvent {
 }
 
 export interface RealtimeEnvelope {
-  type: 'order.placed' | 'order.status_changed' | 'inventory.changed' | 'ping';
+  type:
+    | 'order.placed'
+    | 'order.awaiting_payment'
+    | 'order.status_changed'
+    | 'inventory.changed'
+    | 'ping';
   id: string;
   at: string;
   data: Record<string, unknown>;
@@ -192,6 +204,23 @@ export const kitchen = {
   queue: () => request<{ orders: ApiOrder[]; serverTime: string }>('/kitchen/queue'),
   completed: () => request<{ orders: ApiOrder[]; serverTime: string }>('/kitchen/completed'),
   stats: () => request<KitchenStats>('/kitchen/stats'),
+
+  /** Orders waiting on money. Not tickets — nothing here is cooked until it is confirmed. */
+  awaitingPayment: () =>
+    request<{ orders: ApiOrder[]; serverTime: string }>('/kitchen/awaiting-payment'),
+
+  /**
+   * Confirm that a UPI payment landed, releasing the order to the kitchen.
+   *
+   * `providerRef` is the bank's own reference (a UTR) when whoever is confirming has it to hand.
+   * Optional by design: requiring it would stall the counter for the sake of a field that is
+   * usually available later from the bank statement anyway.
+   */
+  confirmPayment: (id: string, providerRef?: string) =>
+    request<ApiOrder>(`/kitchen/orders/${id}/confirm-payment`, {
+      method: 'POST',
+      body: JSON.stringify(providerRef !== undefined ? { providerRef } : {}),
+    }),
 
   accept: (id: string) => request<ApiOrder>(`/kitchen/orders/${id}/accept`, { method: 'POST' }),
   start: (id: string) => request<ApiOrder>(`/kitchen/orders/${id}/start`, { method: 'POST' }),

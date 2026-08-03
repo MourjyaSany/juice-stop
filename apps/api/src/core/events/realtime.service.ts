@@ -21,7 +21,15 @@ import { Subject, type Observable } from 'rxjs';
  */
 
 export type RealtimeEventType =
+  /** A real ticket. Drives the kitchen's new-order chime. */
   | 'order.placed'
+  /**
+   * An order exists but has not been paid for.
+   *
+   * Deliberately distinct from `order.placed`: unpaid orders are not on the queue and must not
+   * ring the chime, or an abandoned checkout would sound identical to a sale in a busy kitchen.
+   */
+  | 'order.awaiting_payment'
   | 'order.status_changed'
   | 'inventory.changed'
   | 'store.changed';

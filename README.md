@@ -65,7 +65,31 @@ pnpm dev                                         # both servers
 
 > Browsing works 24/7. **Ordering is gated to 19:00–04:00 IST** — that is the business rule, not a
 > bug. Outside those hours the menu is fully browsable and the order buttons explain why they are
-> disabled. To try the full flow at any hour, change `STORE_OPEN_TIME` / `STORE_CLOSE_TIME` in `.env`.
+> disabled. To try the full flow at any hour, sign in at `/admin` as `owner` and press **Open now**,
+> or change `STORE_OPEN_TIME` / `STORE_CLOSE_TIME` in `.env`.
+
+### Taking UPI payments
+
+Out of the box the shop accepts **cash on delivery only** — deliberately, because `UPI_PAYEE_VPA`
+has no default and a placeholder there would generate QR codes that send real money to a stranger.
+
+To accept UPI, put the shop's own UPI ID in `.env`:
+
+```dotenv
+UPI_PAYEE_VPA=yourshop@okhdfcbank
+UPI_PAYEE_NAME=Juice Stop
+```
+
+Customers then get a QR locked to the exact amount. **The money is real and it goes straight to that
+account** — there is no gateway in between and no fees. What there is also no such thing as, on this
+path, is an automatic confirmation: UPI deep links have no callback, so nothing tells the server the
+money arrived. The order waits in **Awaiting payment** on the kitchen board until a staff member sees
+the credit in their banking app and presses *Payment received*. The customer's screen says exactly
+that, and updates itself the moment it happens.
+
+For confirmation in seconds without a human, set `PAYMENT_PROVIDER=razorpay` and implement the
+adapter — the port, config and webhook contract are already in place. See
+[ADR-018](./docs/11-decision-log.md).
 
 ---
 
@@ -93,7 +117,7 @@ tools/         extract-burger-sprites.py — cuts the hero burger layers from th
 | `pnpm dev` | All apps in watch mode |
 | `pnpm build` | Build everything |
 | `pnpm typecheck` | Strict TS across the workspace |
-| `pnpm test:unit` | Unit tests (103) |
+| `pnpm test:unit` | Unit tests (150) |
 | `pnpm verify` | lint + typecheck + tests + build — **the merge gate** |
 | `pnpm db:studio` | Browse the database in a GUI |
 | `pnpm db:reset` | Wipe and re-seed |
@@ -116,6 +140,18 @@ screen.
 
 **The server prices orders, not the client.** Requests carry item IDs; the API looks up what they
 actually cost. Trusting client-supplied prices is how a ₹499 combo gets bought for ₹1.
+
+**Unpaid orders are not on the kitchen board.** A UPI order is born `AWAITING_PAYMENT`, which sits
+outside the kitchen queue entirely — not styled differently, *absent*. Stock is not held either,
+because an abandoned QR must not sit on the last five portions of something. Both are released the
+moment payment is confirmed. Cash orders skip the gate and settle at the door instead, against the
+same code the rider already collects.
+
+**Nothing claims a payment is confirmed before it is.** The default UPI path generates a QR against
+the shop's own UPI ID, and a UPI deep link has no callback — so a person confirms receipt, and the
+customer is told that in those words. Automatic confirmation needs a payment gateway; swapping one
+in is a single adapter behind `PaymentProvider`. Details and rejected alternatives in
+[ADR-018](./docs/11-decision-log.md).
 
 **Customers get 10 minutes to change an order.** During that window the kitchen is *blocked* from
 starting — showing "Cooking" for food that might gain two more items is a lie, and once you've lied
@@ -167,11 +203,15 @@ python tools/extract-burger-sprites.py
 | Delivery completion | ✅ Gated on the customer's 4-digit code. Riders use the kitchen login |
 | API — menu, orders, kitchen | ✅ Working |
 | Database, migrations, seed | ✅ SQLite |
+| Owner dashboard, analytics | ✅ Revenue, hourly shape, payment mix, cash position, activity feed, CSV export |
+| Shop open/close override | ✅ Bounded, audited, announced over realtime |
+| **Payments — UPI** | ✅ **Real money.** QR for the exact amount against the shop's own UPI ID. Unpaid orders never reach the kitchen |
+| **Payments — cash on delivery** | ✅ Settles at handover, bound to the delivery code. Outstanding cash is on the dashboard |
+| Payment confirmation | ⚠️ **Manual** on the default path — a UPI deep link has no callback, so staff confirm receipt. Automatic confirmation needs a gateway; the port is there, the adapter is not. [ADR-018](./docs/11-decision-log.md) |
+| Refunds | ❌ No process. A confirmed payment on a rejected order is money owed with no way to return it |
 | Menu rendering | ⚠️ Structure and prices come from `packages/menu` at build time; only availability is live from the API. The seed uses the same package, so the two cannot disagree |
-| Payments | ⚠️ Simulated. No gateway connected; no money moves |
 | Kitchen auth | ⚠️ Development credentials, isolated in `modules/kitchen-auth`. Throws on boot in production |
 | Customer accounts / auth | ❌ Not built. Profile is `localStorage`, and `GET /orders/:id` is unauthenticated |
-| Admin, analytics | ❌ Not built |
 
 This is **not** production-ready. It is a working, well-architected foundation with the money-path
 reasoning already in place.

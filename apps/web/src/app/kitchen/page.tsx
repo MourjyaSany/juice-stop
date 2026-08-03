@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Money } from '@juice-stop/core';
 import { ApiError, type ApiOrder } from '@/lib/api';
-import { kitchen, type KitchenStats, type RealtimeEnvelope } from '@/lib/kitchen-api';
+import { kitchen, toPaise, type KitchenStats, type RealtimeEnvelope } from '@/lib/kitchen-api';
 import { KitchenShell } from '@/components/kitchen/shell';
 import { KitchenOrderCard, type OrderAction, type UndoAction } from '@/components/kitchen/order-card';
 import { useKitchenStream, useNow } from '@/components/kitchen/use-kitchen-stream';
@@ -53,6 +54,7 @@ const COLUMNS: Array<{ id: ColumnId; title: string; statuses: string[]; accent: 
 export default function KitchenDashboardPage() {
   const [queue, setQueue] = useState<ApiOrder[]>([]);
   const [completed, setCompleted] = useState<ApiOrder[]>([]);
+  const [awaiting, setAwaiting] = useState<ApiOrder[]>([]);
   const [stats, setStats] = useState<KitchenStats | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,10 +67,16 @@ export default function KitchenDashboardPage() {
 
   const reconcile = useCallback(async () => {
     try {
-      const [q, c, s] = await Promise.all([kitchen.queue(), kitchen.completed(), kitchen.stats()]);
+      const [q, c, s, a] = await Promise.all([
+        kitchen.queue(),
+        kitchen.completed(),
+        kitchen.stats(),
+        kitchen.awaitingPayment(),
+      ]);
       setQueue(q.orders);
       setCompleted(c.orders);
       setStats(s);
+      setAwaiting(a.orders);
       setError(null);
 
       // Chime for genuinely new tickets only, and never on the first load — signing in at 23:00 to
@@ -227,6 +235,12 @@ export default function KitchenDashboardPage() {
         </p>
       )}
 
+      <AwaitingPayment
+        orders={awaiting}
+        busyId={busyId}
+        onConfirm={(id) => void act(id, () => kitchen.confirmPayment(id))}
+      />
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map((column) => {
           const orders = byColumn.get(column.id) ?? [];
@@ -281,6 +295,89 @@ export default function KitchenDashboardPage() {
         })}
       </div>
     </KitchenShell>
+  );
+}
+
+/**
+ * Orders waiting on money.
+ *
+ * Deliberately a strip above the board rather than a fifth column. These are not tickets — nothing
+ * is cooked, nothing is timed, and a cook scanning for the next thing to make must not have
+ * uncooked, unpaid rows in that scan. It collapses to nothing when empty, which is most of the time.
+ *
+ * Confirming is a **human assertion that money arrived**, so the control says exactly that. The
+ * amount is the largest thing in each row because it is what has to be matched against the
+ * notification on the counter phone — that comparison is the entire verification, and making it
+ * easy is the difference between a real check and a reflex tap.
+ */
+function AwaitingPayment({
+  orders,
+  busyId,
+  onConfirm,
+}: {
+  orders: ApiOrder[];
+  busyId: string | null;
+  onConfirm: (id: string) => void;
+}) {
+  if (orders.length === 0) return null;
+
+  return (
+    <section
+      className="mb-4 rounded-[14px] p-3.5"
+      style={{
+        background: 'rgb(234 179 8 / 0.08)',
+        border: '1px solid rgb(234 179 8 / 0.28)',
+      }}
+    >
+      <header className="mb-3 flex items-center gap-2.5">
+        <span
+          className="h-2.5 w-2.5 animate-pulse rounded-full"
+          style={{ background: '#EAB308' }}
+          aria-hidden
+        />
+        <h2 className="font-display text-sm font-bold uppercase tracking-[0.08em]">
+          Awaiting payment
+        </h2>
+        <span
+          className="tabular rounded-full px-2 py-0.5 font-display text-xs font-bold"
+          style={{ background: 'rgb(234 179 8 / 0.2)', color: '#EAB308' }}
+        >
+          {orders.length}
+        </span>
+        <p className="ml-auto hidden text-[11px] text-[var(--color-text-tertiary)] sm:block">
+          Not cooking yet · confirm once the money is in the account
+        </p>
+      </header>
+
+      <ul className="grid gap-2 lg:grid-cols-2">
+        {orders.map((order) => (
+          <li
+            key={order.id}
+            className="flex flex-wrap items-center gap-3 rounded-[12px] px-3.5 py-3"
+            style={{ background: 'var(--color-raised)' }}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="tabular font-display text-xl font-bold">
+                {Money.format(toPaise(order.totalPaise))}
+              </p>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--color-text-tertiary)]">
+                {order.paymentReference ?? order.orderNumber}
+                {order.customerName !== null && ` · ${order.customerName}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={busyId === order.id}
+              onClick={() => onConfirm(order.id)}
+              className="h-12 shrink-0 rounded-[11px] px-4 font-display text-sm font-bold text-white disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg,#22C55E,#16A34A)' }}
+            >
+              {busyId === order.id ? 'Confirming…' : 'Payment received'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
