@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { OrderingController } from './ordering.controller.js';
 import { KitchenController } from './kitchen.controller.js';
+import { PaymentWebhookController } from './payment-webhook.controller.js';
 import { OrderingService } from './ordering.service.js';
 import { KitchenModule } from '../kitchen/kitchen.module.js';
 import { KitchenAuthModule } from '../kitchen-auth/kitchen-auth.module.js';
@@ -9,7 +10,7 @@ import { PaymentsModule } from '../payments/payments.module.js';
 
 @Module({
   imports: [KitchenModule, KitchenAuthModule, StoreModule, PaymentsModule],
-  controllers: [OrderingController, KitchenController],
+  controllers: [OrderingController, KitchenController, PaymentWebhookController],
   providers: [OrderingService],
   exports: [OrderingService],
 })

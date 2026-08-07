@@ -589,6 +589,67 @@ export class OrderingService {
   }
 
   /**
+   * A payment provider says money arrived. Release the order.
+   *
+   * The automatic counterpart to a staff member tapping *Payment received*, and the only caller
+   * that reaches `confirmPayment` without a person behind it. Everything a human confirmation
+   * cannot check is checked here instead:
+   *
+   *   · **The amount must match the order.** A webhook is signed, not trusted — a credit for less
+   *     than the bill releases nothing. Underpayment is logged loudly rather than silently topped
+   *     up, because it means either an attack or a genuine customer who now needs a refund.
+   *   · **An unknown order is dropped, not an error.** A webhook naming an order we have never
+   *     heard of is somebody else's traffic or a stale retry against a wiped database.
+   *
+   * Returns whether anything was actually applied, so the endpoint can answer honestly without
+   * ever failing the delivery.
+   */
+  async confirmPaymentFromProvider(input: {
+    orderId: string;
+    amountPaise: bigint;
+    providerRef: string;
+    provider: string;
+  }): Promise<boolean> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: input.orderId },
+      select: { id: true, status: true, paymentStatus: true, totalPaise: true, orderNumber: true },
+    });
+
+    if (order === null) {
+      this.logger.warn(
+        `Payment webhook named an unknown order ${input.orderId} (${input.provider} ref ${input.providerRef}).`,
+      );
+      return false;
+    }
+
+    // Delivered at least once, by design. A resend after a timeout must be a no-op, not a second
+    // confirmation and not a 500 that makes the provider try again.
+    if (order.paymentStatus === 'PAID') return false;
+
+    if (input.amountPaise !== order.totalPaise) {
+      this.logger.error(
+        `Payment amount mismatch on ${order.orderNumber}: provider says ${input.amountPaise} ` +
+          `paise, order is ${order.totalPaise}. NOT releasing — this is either tampering or an ` +
+          'underpayment that needs a refund.',
+      );
+      return false;
+    }
+
+    if (order.status !== 'AWAITING_PAYMENT') {
+      this.logger.warn(
+        `Payment for ${order.orderNumber} arrived while it was ${order.status}; ignoring.`,
+      );
+      return false;
+    }
+
+    await this.confirmPayment(input.orderId, 'SYSTEM', {
+      confirmedBy: `${input.provider}:webhook`,
+      providerRef: input.providerRef,
+    });
+    return true;
+  }
+
+  /**
    * Lapse unpaid orders whose window has closed.
    *
    * Evaluated on read rather than swept by a job, for the same reason the store override is

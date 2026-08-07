@@ -68,9 +68,11 @@ export default function PayPage() {
     };
   }, [params.id]);
 
-  // The QR encoder is ~20 kB and only this screen and the pickup code need it.
+  // The QR encoder is ~20 kB and only this screen and the pickup code need it. Skipped entirely
+  // when the gateway hosts its own image — there is nothing to encode, and loading an encoder to
+  // not use it is pure waste.
   useEffect(() => {
-    if (payment === null) return;
+    if (payment === null || payment.qrImageUrl !== null || payment.upiUri === '') return;
     let cancelled = false;
     void (async () => {
       try {
@@ -192,7 +194,26 @@ export default function PayPage() {
           <GlassPanel weight="strong" radius={22} className="overflow-hidden p-5">
             {/* White plate: a QR rendered on a dark surface is unreliable under a phone camera. */}
             <div className="flex justify-center">
-              {qr !== null ? (
+              {payment?.qrImageUrl != null ? (
+                <m.div
+                  initial={reduced ? false : { scale: 0.94, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={SPRING.bouncy}
+                  className="rounded-[16px] bg-white p-3"
+                  style={{ boxShadow: '0 10px 30px -12px rgb(0 0 0 / 0.8)' }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the gateway hosts this
+                      and mints a new URL per request; there is nothing for the image optimiser to
+                      cache and a proxy round-trip would only delay the thing being scanned. */}
+                  <img
+                    src={payment.qrImageUrl}
+                    alt="Scan to pay"
+                    width={208}
+                    height={208}
+                    className="block h-[208px] w-[208px]"
+                  />
+                </m.div>
+              ) : qr !== null ? (
                 <m.div
                   initial={reduced ? false : { scale: 0.94, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -219,7 +240,7 @@ export default function PayPage() {
 
             {/* Same-device path. Most customers order and pay on one phone, where scanning your own
                 screen is impossible; the deep link hands them straight to their UPI app. */}
-            {payment !== null && (
+            {payment !== null && payment.upiUri !== '' && (
               <a href={payment.upiUri} className="mt-4 block">
                 <TactileButton size="lg" className="w-full">
                   Open my UPI app

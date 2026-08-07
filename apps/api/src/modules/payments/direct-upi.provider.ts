@@ -78,6 +78,8 @@ export class DirectUpiProvider implements PaymentProvider, OnModuleInit {
         // history. When they ring up about a payment, this is what they will read out.
         note: `Juice Stop ${input.orderNumber}`,
       }),
+      // We build the code ourselves from the shop's own ID, so there is no hosted image.
+      qrImageUrl: null,
       ...amountFields(input.amountPaise),
       expiresAt: expiresAt.toISOString(),
       confirmation: this.confirmation,

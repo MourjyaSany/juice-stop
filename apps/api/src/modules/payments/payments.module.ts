@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppConfigModule } from '../../core/config/config.module.js';
 import { AppConfigService } from '../../core/config/config.service.js';
 import { DirectUpiProvider } from './direct-upi.provider.js';
+import { RazorpayProvider } from './razorpay.provider.js';
 import { PaymentsController } from './payments.controller.js';
 import { PaymentsService } from './payments.service.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider.js';
@@ -22,19 +23,20 @@ import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider.js';
   controllers: [PaymentsController],
   providers: [
     DirectUpiProvider,
+    RazorpayProvider,
     {
       provide: PAYMENT_PROVIDER,
-      inject: [AppConfigService, DirectUpiProvider],
-      useFactory: (config: AppConfigService, directUpi: DirectUpiProvider): PaymentProvider => {
+      inject: [AppConfigService, DirectUpiProvider, RazorpayProvider],
+      useFactory: (
+        config: AppConfigService,
+        directUpi: DirectUpiProvider,
+        razorpay: RazorpayProvider,
+      ): PaymentProvider => {
         switch (config.payments.provider) {
           case 'direct-upi':
             return directUpi;
           case 'razorpay':
-            throw new Error(
-              'PAYMENT_PROVIDER=razorpay is configured but the Razorpay adapter is not built yet. ' +
-                'Implement PaymentProvider in modules/payments/razorpay.provider.ts, or set ' +
-                'PAYMENT_PROVIDER=direct-upi.',
-            );
+            return razorpay;
           default:
             throw new Error(`Unknown PAYMENT_PROVIDER: ${String(config.payments.provider)}`);
         }

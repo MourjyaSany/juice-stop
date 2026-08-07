@@ -120,7 +120,10 @@ export interface ApiOrder {
  */
 export interface PaymentRequestDto {
   reference: string;
+  /** Empty when the provider hosts its own QR — see `qrImageUrl`. */
   upiUri: string;
+  /** A QR the gateway renders and hosts. Null on the direct-UPI path, where we draw it ourselves. */
+  qrImageUrl: string | null;
   amountRupees: string;
   amountPaise: string;
   expiresAt: string;

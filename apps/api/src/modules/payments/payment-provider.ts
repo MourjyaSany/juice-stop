@@ -45,8 +45,19 @@ export interface PaymentRequest {
   /**
    * The `upi://pay` URI. Rendered as a QR, and usable as a deep link when the customer is paying
    * from the same phone they ordered on.
+   *
+   * Empty string when the provider hosts its own QR image and gives us no URI to build one from —
+   * see `qrImageUrl`. The client picks whichever it was handed.
    */
   upiUri: string;
+  /**
+   * A QR image the provider hosts, when it owns the collecting account rather than us.
+   *
+   * Razorpay returns a rendered PNG rather than a payable URI, because the VPA behind it is theirs
+   * and is minted per request. Null on the direct-UPI path, where we build the code ourselves from
+   * the shop's own ID.
+   */
+  qrImageUrl: string | null;
   /** Decimal rupees, for display beside the QR. Money never crosses this boundary as a float. */
   amountRupees: string;
   amountPaise: string;
